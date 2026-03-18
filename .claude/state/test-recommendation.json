@@ -1,0 +1,7 @@
+{
+  "timestamp": "2026-03-18T02:02:19Z",
+  "changed_file": "O:\TC_P1\src\App.tsx",
+  "test_command": "npm test",
+  "related_test": "",
+  "recommendation": "テストの実行を推奨します"
+}

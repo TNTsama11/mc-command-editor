@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/vite.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
+    <!-- PWA Meta Tags -->
+    <meta name="theme-color" content="#6366f1" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="MC Editor" />
+
+    <!-- SEO Meta Tags -->
+    <title>MC Command Editor - Minecraft 命令可视化编辑器</title>
+    <meta name="description" content="可视化的 Minecraft 命令方块和数据包命令编辑工具，支持命令解析、NBT 编辑、数据包生成" />
+    <meta name="keywords" content="Minecraft, 命令方块, 命令编辑器, 数据包, NBT, datapack, command block" />
+    <meta name="author" content="MC Command Editor Team" />
+
+    <!-- Open Graph / Social Media -->
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="MC Command Editor - Minecraft 命令可视化编辑器" />
+    <meta property="og:description" content="可视化的 Minecraft 命令方块和数据包命令编辑工具" />
+    <meta property="og:image" content="/og-image.png" />
+
+    <!-- PWA Manifest -->
+    <link rel="manifest" href="/manifest.json" />
+
+    <!-- Apple Touch Icon -->
+    <link rel="apple-touch-icon" href="/icons/icon-192x192.png" />
+
+    <!-- Minecraft Icons -->
+    <link rel="stylesheet" href="/icons/icons-minecraft-244.css" />
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+    <!-- PWA Service Worker 由 vite-plugin-pwa 自动注册 -->
+  </body>
+</html>

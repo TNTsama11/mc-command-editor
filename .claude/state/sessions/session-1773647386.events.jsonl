@@ -1,0 +1,13 @@
+{"id":"event-000001","type":"session.start","ts":"2026-03-16T07:49:46Z","state":"initialized"}
+{"id":"event-000002","type":"tool.bash","ts":"2026-03-17T01:19:43Z","state":"initialized","data":{"command":"ls -la "O:/TC_P1/" 2>/dev/null || dir "O:\TC_P1" 2>nul"}}
+{"id":"event-000003","type":"tool.write","ts":"2026-03-17T01:21:50Z","state":"initialized","data":{"file_path":"O:/TC_P1/CLAUDE.md"}}
+{"id":"event-000004","type":"tool.write","ts":"2026-03-17T01:21:52Z","state":"initialized","data":{"file_path":"O:/TC_P1/Plans.md"}}
+{"id":"event-000005","type":"tool.write","ts":"2026-03-17T01:21:53Z","state":"initialized","data":{"file_path":"O:/TC_P1/.claude/settings.json"}}
+{"id":"event-000006","type":"tool.write","ts":"2026-03-17T01:21:55Z","state":"initialized","data":{"file_path":"O:/TC_P1/.claude/hooks.json"}}
+{"id":"event-000007","type":"tool.bash","ts":"2026-03-17T01:22:00Z","state":"initialized","data":{"command":"mkdir -p "O:/TC_P1/hooks""}}
+{"id":"event-000008","type":"tool.write","ts":"2026-03-17T01:22:17Z","state":"initialized","data":{"file_path":"O:/TC_P1/hooks/pre-tool.sh"}}
+{"id":"event-000009","type":"tool.write","ts":"2026-03-17T01:22:19Z","state":"initialized","data":{"file_path":"O:/TC_P1/hooks/post-tool.sh"}}
+{"id":"event-000010","type":"tool.bash","ts":"2026-03-17T01:22:28Z","state":"initialized","data":{"command":"mkdir -p "O:/TC_P1/.claude/logs""}}
+{"id":"event-000011","type":"tool.write","ts":"2026-03-17T01:22:30Z","state":"initialized","data":{"file_path":"O:/TC_P1/.gitignore"}}
+{"id":"event-000012","type":"tool.bash","ts":"2026-03-17T01:22:47Z","state":"initialized","data":{"command":"find "O:/TC_P1" -type f | head -20"}}
+{"id":"event-000013","type":"session.stop","ts":"2026-03-17T01:23:00Z","state":"stopped"}

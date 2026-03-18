@@ -1,0 +1,22 @@
+{
+  "project": {
+    "name": "TC_P1",
+    "type": "nodejs",
+    "language": "TypeScript"
+  },
+  "harness": {
+    "version": "3.3.1",
+    "enabled": true
+  },
+  "editor": {
+    "formatOnSave": true,
+    "linter": "eslint"
+  },
+  "test": {
+    "framework": "jest",
+    "coverage": {
+      "enabled": true,
+      "threshold": 80
+    }
+  }
+}

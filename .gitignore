@@ -1,0 +1,49 @@
+# Dependencies
+node_modules/
+.pnp
+.pnp.js
+
+# Build
+dist/
+*.tsbuildinfo
+
+# Testing
+coverage/
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+
+# Claude Code
+.claude/logs/
+.claude/state/agent-trace.jsonl
+
+# Temp
+*.tmp
+*.temp
+.cache/
+
+# Screenshots
+*.png
+!public/**/*.png
+
+# Temp files
+stop_decision.json
+stop_check_result.json
+OTC_P1stop_decision.json

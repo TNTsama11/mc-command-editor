@@ -1,0 +1,14 @@
+{
+  "hooks": {
+    "preToolUse": {
+      "enabled": true,
+      "script": "hooks/pre-tool.sh"
+    },
+    "postToolUse": {
+      "enabled": true,
+      "script": "hooks/post-tool.sh"
+    }
+  },
+  "version": "3.0.0",
+  "description": "Harness v3 hooks configuration"
+}
