@@ -68,8 +68,8 @@ export default defineConfig({
 
   // 启动开发服务器
   webServer: {
-    command: 'pnpm preview',
-    url: 'http://localhost:4173',
+    command: 'npm run build && npm run preview -- --host 127.0.0.1 --port 4173',
+    url: 'http://127.0.0.1:4173',
     reuseExistingServer: !process.env.CI,
     timeout: 120 * 1000,
   },

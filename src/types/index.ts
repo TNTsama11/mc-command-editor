@@ -1,4 +1,4 @@
-// 项目类型定义
+import type { WorkflowDocument } from '@/core/workflow/types'
 
 export interface Datapack {
   id: string
@@ -60,8 +60,11 @@ export interface Project {
   id: string
   name: string
   description?: string
+  targetVersion: string
   createdAt: number
   updatedAt: number
+  mainWorkflowId: string
+  workflows: Record<string, WorkflowDocument>
   commandBlocks: CommandBlock[]
   datapacks: Datapack[]
 }

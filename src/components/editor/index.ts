@@ -1,7 +1,3 @@
-/**
- * 编辑器组件导出
- */
-
 export { ParameterInput, default as parameterInput } from './ParameterInput'
 export type {
   ParameterInputProps,
@@ -9,7 +5,6 @@ export type {
   ValidationError,
 } from './ParameterInput'
 
-// 语法高亮组件
 export {
   SyntaxHighlighter,
   SyntaxThemeProvider,
@@ -31,7 +26,6 @@ export type {
 } from './SyntaxHighlighter'
 export { default as syntaxHighlighter } from './SyntaxHighlighter'
 
-// NBT 编辑器组件
 export { NBTEditor, default as nbtEditor } from './NBTEditor'
 export type { NBTEditorProps } from './NBTEditor'
 export {
@@ -42,8 +36,5 @@ export {
   getNBTType,
 } from './NBTEditor'
 
-// 历史记录面板组件
 export { HistoryPanel, default as historyPanel } from './HistoryPanel'
-
-// 项目设置组件
 export { ProjectSettings, default as projectSettings } from './ProjectSettings'

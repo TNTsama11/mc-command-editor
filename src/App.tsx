@@ -1,101 +1,142 @@
-import { useEffect, useState, useCallback } from 'react'
-import { Command as CommandIcon, Blocks, Package, Settings, Search as SearchIcon, FileUp, FolderOpen } from 'lucide-react'
-import { Button } from '@/components/ui/button'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
-import { Badge } from '@/components/ui/badge'
-import { useUIStore, useEditorStore } from '@/store'
+import { useCallback, useEffect, useState } from 'react'
+import {
+  Blocks,
+  Command as CommandIcon,
+  FileUp,
+  FolderOpen,
+  Package,
+  Search as SearchIcon,
+  Settings,
+} from 'lucide-react'
+
+import { ThemeToggle } from '@/components/common/ThemeToggle'
+import { ImportDialog } from '@/components/editor/ImportDialog'
+import { ProjectSettings } from '@/components/editor/ProjectSettings'
 import { SearchPanel } from '@/components/editor/SearchPanel'
 import { CommandEditor } from '@/components/editor/CommandEditor'
-import { ImportDialog } from '@/components/editor/ImportDialog'
-import { ThemeToggle } from '@/components/common/ThemeToggle'
+import { NodeEditorPage } from '@/components/flow/NodeEditorPage'
+import { Badge } from '@/components/ui/badge'
+import { Button } from '@/components/ui/button'
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog'
+import { useEditorStore, useUIStore } from '@/store'
+import { useCurrentProject, useProjectStore } from '@/store/projectStore'
 import type { SearchResult } from '@/store/searchStore'
 import type { Command } from '@/types'
 
 type ViewMode = 'home' | 'editor'
+type EditorMode = 'classic' | 'flow'
+
+const supportedNodeTypes = [
+  'Give',
+  'TP',
+  'Summon',
+  'Execute',
+  'Fill',
+  'Setblock',
+  'Effect',
+  'Particle',
+  'PlaySound',
+]
 
 function App() {
   const { initTheme } = useUIStore()
   const { commandHistory, setCurrentCommand } = useEditorStore()
-  const [showSearchPanel, setShowSearchPanel] = useState(false)
-  const [viewMode, setViewMode] = useState<ViewMode>('home')
-  const [showImportDialog, setShowImportDialog] = useState(false)
+  const currentProject = useCurrentProject()
+  const createProject = useProjectStore((state) => state.createProject)
 
-  // 初始化主题（包含系统主题检测）
+  const [showSearchPanel, setShowSearchPanel] = useState(false)
+  const [showImportDialog, setShowImportDialog] = useState(false)
+  const [showProjectSettings, setShowProjectSettings] = useState(false)
+  const [viewMode, setViewMode] = useState<ViewMode>('home')
+  const [editorMode, setEditorMode] = useState<EditorMode>('classic')
+
   useEffect(() => {
     initTheme()
   }, [initTheme])
 
-  // 处理新建命令
-  const handleNewCommand = useCallback(() => {
-    setCurrentCommand(null)
-    setViewMode('editor')
-  }, [setCurrentCommand])
+  const ensureProject = useCallback(() => {
+    if (currentProject) {
+      return currentProject
+    }
 
-  // 处理打开项目
-  const handleOpenProject = useCallback(() => {
-    // TODO: 实现打开项目功能
-    console.log('打开项目')
-  }, [])
+    return createProject('未命名项目', '新的可视化指令工作流项目')
+  }, [createProject, currentProject])
 
-  // 处理从命令导入
-  const handleImportCommand = useCallback(() => {
-    setShowImportDialog(true)
-  }, [])
-
-  // 将字符串转换为 Command 对象
-  const parseCommand = useCallback((cmdString: string): Command => {
+  const parseCommand = useCallback((raw: string): Command => {
     return {
       id: `cmd-${Date.now()}-${Math.random().toString(36).slice(2)}`,
-      type: cmdString.split(' ')[0]?.replace('/', '') || 'unknown',
-      raw: cmdString,
+      type: raw.split(' ')[0]?.replace('/', '') || 'unknown',
+      raw,
       parsed: true,
     }
   }, [])
 
-  // 处理搜索命令选择
-  const handleSelectCommand = useCallback((_name: string, result: SearchResult) => {
-    console.log('Selected command:', result)
-    if (result.usage) {
-      setCurrentCommand(parseCommand(result.usage))
-    }
+  const openFlowWorkbench = useCallback(() => {
+    ensureProject()
+    setCurrentCommand(null)
+    setEditorMode('flow')
     setViewMode('editor')
-    setShowSearchPanel(false)
-  }, [setCurrentCommand, parseCommand])
+  }, [ensureProject, setCurrentCommand])
 
-  // 处理模板选择
-  const handleSelectTemplate = useCallback((result: SearchResult) => {
-    console.log('Selected template:', result)
-    if (result.usage) {
-      setCurrentCommand(parseCommand(result.usage))
-    }
-    setViewMode('editor')
-    setShowSearchPanel(false)
-  }, [setCurrentCommand, parseCommand])
+  const openClassicEditorWithCommand = useCallback(
+    (command: Command) => {
+      ensureProject()
+      setCurrentCommand(command)
+      setEditorMode('classic')
+      setViewMode('editor')
+    },
+    [ensureProject, setCurrentCommand]
+  )
 
-  // 处理命令复制
+  const handleSelectCommand = useCallback(
+    (_name: string, result: SearchResult) => {
+      if (result.usage) {
+        setCurrentCommand(parseCommand(result.usage))
+      }
+      setEditorMode('classic')
+      setViewMode('editor')
+      setShowSearchPanel(false)
+    },
+    [parseCommand, setCurrentCommand]
+  )
+
+  const handleSelectTemplate = useCallback(
+    (result: SearchResult) => {
+      if (result.usage) {
+        setCurrentCommand(parseCommand(result.usage))
+      }
+      setEditorMode('classic')
+      setViewMode('editor')
+      setShowSearchPanel(false)
+    },
+    [parseCommand, setCurrentCommand]
+  )
+
   const handleCopyCommand = useCallback((command: string) => {
     navigator.clipboard.writeText(command)
-    console.log('Copied command:', command)
   }, [])
 
-  // 返回首页
-  const handleBackToHome = useCallback(() => {
-    setViewMode('home')
-  }, [])
-
-  // 处理导入完成
-  const handleImportComplete = useCallback((commands: string[]) => {
-    console.log('Imported commands:', commands)
-    if (commands.length > 0) {
-      setCurrentCommand(parseCommand(commands[0]))
-      setViewMode('editor')
-    }
-    setShowImportDialog(false)
-  }, [setCurrentCommand, parseCommand])
+  const handleImportComplete = useCallback(
+    (commands: string[]) => {
+      if (commands[0]) {
+        setCurrentCommand(parseCommand(commands[0]))
+        setEditorMode('classic')
+        setViewMode('editor')
+      }
+      setShowImportDialog(false)
+    },
+    [parseCommand, setCurrentCommand]
+  )
 
   return (
-    <div className="min-h-screen bg-background flex flex-col">
-      {/* Header */}
+    <div className="flex min-h-screen flex-col bg-background">
       <header className="sticky top-0 z-50 border-b bg-card/95 backdrop-blur supports-[backdrop-filter]:bg-card/60">
         <div className="container flex h-16 items-center justify-between">
           <div className="flex items-center gap-3">
@@ -104,7 +145,7 @@ function App() {
             </div>
             <div>
               <h1 className="text-xl font-bold">MC Command Editor</h1>
-              <p className="text-xs text-muted-foreground">Minecraft 命令可视化编辑器</p>
+              <p className="text-xs text-muted-foreground">MC 命令可视化编辑器</p>
             </div>
           </div>
 
@@ -112,19 +153,25 @@ function App() {
             <Button
               variant="ghost"
               size="icon"
-              onClick={() => setShowSearchPanel(!showSearchPanel)}
               title="搜索命令"
+              onClick={() => setShowSearchPanel((value) => !value)}
             >
               <SearchIcon className="h-5 w-5" />
+            </Button>
+            <Button
+              variant="ghost"
+              size="icon"
+              title="项目设置"
+              onClick={() => setShowProjectSettings(true)}
+            >
+              <Settings className="h-5 w-5" />
             </Button>
             <ThemeToggle showSystemOption />
           </div>
         </div>
       </header>
 
-      {/* Main Content */}
-      <main className="container py-6 flex-1">
-        {/* Search Panel */}
+      <main className="container flex-1 py-6">
         {showSearchPanel && (
           <Card className="mb-6">
             <CardContent className="p-0">
@@ -139,93 +186,102 @@ function App() {
           </Card>
         )}
 
-        {/* 编辑器模式 */}
         {viewMode === 'editor' && (
           <div className="mb-6">
-            <Button variant="ghost" onClick={handleBackToHome} className="mb-4">
-              ← 返回首页
+            <Button variant="ghost" className="mb-4" onClick={() => setViewMode('home')}>
+              返回首页
             </Button>
-            <CommandEditor />
+            {editorMode === 'flow' ? <NodeEditorPage /> : <CommandEditor />}
           </div>
         )}
 
-        {/* 首页模式 */}
         {viewMode === 'home' && (
           <>
-            {/* Feature Cards */}
-            <div className="grid gap-6 md:grid-cols-3 mb-8">
-              <FeatureCard
-                icon={<CommandIcon className="h-8 w-8" />}
-                title="命令编辑"
-                description="可视化编辑 Minecraft 命令，支持自动补全和语法检查"
-                badge="核心功能"
-                onClick={handleNewCommand}
-              />
-              <FeatureCard
-                icon={<Blocks className="h-8 w-8" />}
-                title="命令方块链"
-                description="拖拽式编辑命令方块链，支持条件判断和循环"
-                onClick={handleNewCommand}
-              />
-              <FeatureCard
-                icon={<Package className="h-8 w-8" />}
-                title="数据包生成"
-                description="一键导出数据包，支持函数文件和标签"
-                onClick={handleNewCommand}
-              />
-            </div>
-
-            {/* Quick Start */}
             <Card className="mb-8">
               <CardHeader>
-                <CardTitle>快速开始</CardTitle>
-                <CardDescription>选择一个选项开始创建你的命令</CardDescription>
+                <CardTitle>MC 命令可视化编辑器</CardTitle>
+                <CardDescription>
+                  面向浏览器的 Minecraft 指令工作台，聚焦图式编排、参数编辑、结果预览和快速导出。
+                </CardDescription>
               </CardHeader>
               <CardContent>
                 <div className="flex flex-wrap gap-3">
-                  <Button onClick={handleNewCommand}>
-                    <CommandIcon className="h-4 w-4 mr-2" />
-                    新建命令
+                  <Button onClick={openFlowWorkbench}>
+                    <CommandIcon className="mr-2 h-4 w-4" />
+                    开始创建
                   </Button>
-                  <Button variant="outline" onClick={handleOpenProject}>
-                    <FolderOpen className="h-4 w-4 mr-2" />
+                  <Button variant="outline" onClick={() => setShowProjectSettings(true)}>
+                    <FolderOpen className="mr-2 h-4 w-4" />
                     打开项目
                   </Button>
-                  <Button variant="outline" onClick={handleImportCommand}>
-                    <FileUp className="h-4 w-4 mr-2" />
+                  <Button variant="outline" onClick={() => setShowImportDialog(true)}>
+                    <FileUp className="mr-2 h-4 w-4" />
                     从命令导入
                   </Button>
                 </div>
               </CardContent>
             </Card>
 
-            {/* Preview Area */}
-            <Card>
+            <div className="mb-8 grid gap-6 md:grid-cols-3">
+              <FeatureCard
+                icon={<CommandIcon className="h-8 w-8" />}
+                title="命令编辑"
+                description="保留原生命令名词，用更稳定的界面完成参数编辑与结果预览。"
+                badge="核心"
+                onClick={openFlowWorkbench}
+              />
+              <FeatureCard
+                icon={<Blocks className="h-8 w-8" />}
+                title="逻辑编排"
+                description="通过节点连接组织执行流与数据流，让命令关系更直观。"
+                onClick={openFlowWorkbench}
+              />
+              <FeatureCard
+                icon={<Package className="h-8 w-8" />}
+                title="导出交付"
+                description="为函数封装、数据包导出和复杂逻辑沉淀保留稳定基础。"
+                onClick={openFlowWorkbench}
+              />
+            </div>
+
+            <Card className="mb-8">
               <CardHeader>
-                <CardTitle>命令预览</CardTitle>
-                <CardDescription>实时预览生成的命令</CardDescription>
+                <CardTitle>当前支持的节点类型</CardTitle>
+                <CardDescription>高频命令优先可用，节点库和编译能力仍在持续完善。</CardDescription>
               </CardHeader>
               <CardContent>
-                <div className="rounded-md bg-muted p-4 font-minecraft text-sm">
-                  <span className="text-muted-foreground">// 点击"新建命令"开始编辑</span>
+                <div className="flex flex-wrap gap-2">
+                  {supportedNodeTypes.map((type) => (
+                    <Badge key={type} variant="outline" className="px-3 py-1">
+                      {type}
+                    </Badge>
+                  ))}
                 </div>
               </CardContent>
             </Card>
 
-            {/* Recent Commands */}
+            <Card>
+              <CardHeader>
+                <CardTitle>编译结果预览</CardTitle>
+                <CardDescription>在进入工作台后查看当前图生成的命令或函数输出，并尽早发现缺参和连线问题。</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="rounded-md bg-muted p-4 text-sm">
+                  <span className="text-muted-foreground">// 点击“开始创建”进入工作台</span>
+                </div>
+              </CardContent>
+            </Card>
+
             <div className="mt-8">
-              <h2 className="text-lg font-semibold mb-4">最近使用</h2>
+              <h2 className="mb-4 text-lg font-semibold">最近使用</h2>
               <div className="grid gap-3 md:grid-cols-2">
                 {commandHistory.length > 0 ? (
-                  commandHistory.map((cmd) => (
+                  commandHistory.map((command) => (
                     <CommandHistoryItem
-                      key={cmd.id}
-                      command={cmd.raw}
+                      key={command.id}
+                      command={command.raw}
                       time={new Date().toLocaleString()}
-                      onClick={() => {
-                        setCurrentCommand(cmd)
-                        setViewMode('editor')
-                      }}
+                      onClick={() => openClassicEditorWithCommand(command)}
                     />
                   ))
                 ) : (
@@ -233,22 +289,26 @@ function App() {
                     <CommandHistoryItem
                       command="/summon zombie ~ ~ ~ {CustomName:Test}"
                       time="5 分钟前"
-                      onClick={handleNewCommand}
+                      onClick={() =>
+                        openClassicEditorWithCommand(parseCommand('/summon zombie ~ ~ ~ {CustomName:Test}'))
+                      }
                     />
                     <CommandHistoryItem
                       command="/give @p diamond 64"
                       time="10 分钟前"
-                      onClick={handleNewCommand}
+                      onClick={() => openClassicEditorWithCommand(parseCommand('/give @p diamond 64'))}
                     />
                     <CommandHistoryItem
                       command="/execute at @a run summon lightning_bolt"
                       time="1 小时前"
-                      onClick={handleNewCommand}
+                      onClick={() =>
+                        openClassicEditorWithCommand(parseCommand('/execute at @a run summon lightning_bolt'))
+                      }
                     />
                     <CommandHistoryItem
                       command="/fill ~ ~ ~ ~10 ~10 ~10 stone"
                       time="昨天"
-                      onClick={handleNewCommand}
+                      onClick={() => openClassicEditorWithCommand(parseCommand('/fill ~ ~ ~ ~10 ~10 ~10 stone'))}
                     />
                   </>
                 )}
@@ -258,32 +318,58 @@ function App() {
         )}
       </main>
 
-      {/* Footer */}
-      <footer className="border-t py-4 mt-auto">
+      <footer className="mt-auto border-t py-4">
         <div className="container flex items-center justify-between text-sm text-muted-foreground">
           <span>MC Command Editor v0.1.0</span>
           <div className="flex items-center gap-4">
-            <a href="#" className="hover:text-foreground transition-colors">文档</a>
-            <a href="#" className="hover:text-foreground transition-colors">GitHub</a>
-            <Button variant="ghost" size="sm" className="gap-1">
+            <a href="#" className="transition-colors hover:text-foreground">
+              文档
+            </a>
+            <a href="#" className="transition-colors hover:text-foreground">
+              GitHub
+            </a>
+            <Button
+              variant="ghost"
+              size="sm"
+              className="gap-1"
+              aria-label="项目中心"
+              onClick={() => setShowProjectSettings(true)}
+            >
               <Settings className="h-4 w-4" />
-              设置
+              项目中心
             </Button>
           </div>
         </div>
       </footer>
 
-      {/* Import Dialog */}
       <ImportDialog
         open={showImportDialog}
         onClose={() => setShowImportDialog(false)}
         onImport={handleImportComplete}
       />
+
+      <Dialog open={showProjectSettings} onOpenChange={setShowProjectSettings}>
+        <DialogContent className="max-h-[85vh] max-w-6xl overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>项目设置</DialogTitle>
+            <DialogDescription>
+              管理当前项目、目标版本、本地存储以及导入导出。
+            </DialogDescription>
+          </DialogHeader>
+          <ProjectSettings />
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }
 
-function FeatureCard({ icon, title, description, badge, onClick }: {
+function FeatureCard({
+  icon,
+  title,
+  description,
+  badge,
+  onClick,
+}: {
   icon: React.ReactNode
   title: string
   description: string
@@ -291,12 +377,9 @@ function FeatureCard({ icon, title, description, badge, onClick }: {
   onClick?: () => void
 }) {
   return (
-    <Card
-      className="hover:border-primary/50 transition-colors cursor-pointer"
-      onClick={onClick}
-    >
+    <Card className="cursor-pointer transition-colors hover:border-primary/50" onClick={onClick}>
       <CardHeader>
-        <div className="flex items-center justify-between mb-2">
+        <div className="mb-2 flex items-center justify-between">
           <div className="text-primary">{icon}</div>
           {badge && <Badge>{badge}</Badge>}
         </div>
@@ -307,14 +390,19 @@ function FeatureCard({ icon, title, description, badge, onClick }: {
   )
 }
 
-function CommandHistoryItem({ command, time, onClick }: { command: string; time: string; onClick?: () => void }) {
+function CommandHistoryItem({
+  command,
+  time,
+  onClick,
+}: {
+  command: string
+  time: string
+  onClick?: () => void
+}) {
   return (
-    <Card
-      className="hover:bg-accent/50 transition-colors cursor-pointer"
-      onClick={onClick}
-    >
+    <Card className="cursor-pointer transition-colors hover:bg-accent/50" onClick={onClick}>
       <CardContent className="p-4">
-        <code className="text-sm font-minecraft text-primary block truncate">{command}</code>
+        <code className="block truncate font-minecraft text-sm text-primary">{command}</code>
         <span className="text-xs text-muted-foreground">{time}</span>
       </CardContent>
     </Card>

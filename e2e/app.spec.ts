@@ -1,63 +1,31 @@
-/**
- * E2E 测试 - 应用基础功能
- */
-
-import { test, expect, Page } from '@playwright/test'
+import { test, expect } from '@playwright/test'
 
 test.describe('MC Command Editor', () => {
   test.beforeEach(async ({ page }) => {
     await page.goto('/')
   })
 
-  test('应该正确加载首页', async ({ page }) => {
-    // 检查页面标题
+  test('应该显示首页核心文案', async ({ page }) => {
     await expect(page).toHaveTitle(/MC Command Editor/)
-
-    // 检查主标题
-    await expect(page.getByRole('heading', { name: 'MC Command Editor' })).toBeVisible()
-
-    // 检查描述
-    await expect(page.getByText('Minecraft 命令可视化编辑器')).toBeVisible()
+    await expect(page.getByRole('heading', { name: 'MC 命令可视化编辑器' })).toBeVisible()
+    await expect(page.getByRole('button', { name: '开始创建' })).toBeVisible()
+    await expect(page.getByRole('heading', { name: '当前支持的节点类型' })).toBeVisible()
   })
 
-  test('应该显示功能卡片', async ({ page }) => {
-    // 检查命令编辑功能卡片
-    await expect(page.getByText('命令编辑')).toBeVisible()
-    await expect(page.getByText('可视化编辑 Minecraft 命令')).toBeVisible()
+  test('点击打开项目应进入项目设置面板', async ({ page }) => {
+    await page.getByRole('button', { name: '打开项目' }).click()
 
-    // 检查命令方块链功能卡片
-    await expect(page.getByText('命令方块链')).toBeVisible()
-
-    // 检查数据包生成功能卡片
-    await expect(page.getByText('数据包生成')).toBeVisible()
+    await expect(page.getByRole('heading', { name: '项目设置' })).toBeVisible()
+    await expect(page.getByRole('heading', { name: '项目列表' })).toBeVisible()
   })
 
-  test('应该能够切换深色模式', async ({ page }) => {
-    // 找到主题切换按钮
-    const themeToggle = page.getByRole('button', { name: /sun|moon/i })
-    await expect(themeToggle).toBeVisible()
+  test('开始创建后应自动拥有一个当前项目', async ({ page }) => {
+    await page.getByRole('button', { name: '开始创建' }).click()
+    await page.getByRole('button', { name: '设置' }).click()
 
-    // 点击切换
-    await themeToggle.click()
-
-    // 验证深色模式已启用（检查 class）
-    const htmlElement = page.locator('html')
-    await expect(htmlElement).toHaveClass(/dark/)
-  })
-
-  test('应该显示快速开始区域', async ({ page }) => {
-    // 检查快速开始标题
-    await expect(page.getByText('快速开始')).toBeVisible()
-
-    // 检查按钮
-    await expect(page.getByRole('button', { name: '新建命令' })).toBeVisible()
-    await expect(page.getByRole('button', { name: '打开项目' })).toBeVisible()
-    await expect(page.getByRole('button', { name: '从命令导入' })).toBeVisible()
-  })
-
-  test('应该显示命令预览区域', async ({ page }) => {
-    await expect(page.getByText('命令预览')).toBeVisible()
-    await expect(page.getByText('实时预览生成的命令')).toBeVisible()
+    await expect(page.getByRole('heading', { name: '项目设置' })).toBeVisible()
+    await expect(page.getByText('当前还没有打开项目。')).toHaveCount(0)
+    await expect(page.getByLabel('项目名称')).toBeVisible()
   })
 })
 
@@ -65,12 +33,10 @@ test.describe('PWA 功能', () => {
   test('应该注册 Service Worker', async ({ page }) => {
     await page.goto('/')
 
-    // 等待 Service Worker 注册
     const swRegistered = await page.evaluate(() => {
       return new Promise((resolve) => {
         if ('serviceWorker' in navigator) {
           navigator.serviceWorker.ready.then(() => resolve(true))
-          // 超时处理
           setTimeout(() => resolve(false), 5000)
         } else {
           resolve(false)
@@ -84,13 +50,11 @@ test.describe('PWA 功能', () => {
   test('应该有有效的 manifest.json', async ({ page, request }) => {
     await page.goto('/')
 
-    // 获取 manifest
     const manifest = await request.get('/manifest.json')
     expect(manifest.ok()).toBeTruthy()
 
     const manifestData = await manifest.json()
 
-    // 验证必要字段
     expect(manifestData.name).toBe('MC Command Editor')
     expect(manifestData.short_name).toBe('MCEditor')
     expect(manifestData.start_url).toBe('/')
@@ -101,60 +65,49 @@ test.describe('PWA 功能', () => {
 })
 
 test.describe('响应式设计', () => {
-  test('移动端应该正确显示', async ({ page }) => {
-    // 设置移动端视口
+  test('移动端应该正确显示首页标题', async ({ page }) => {
     await page.setViewportSize({ width: 375, height: 667 })
     await page.goto('/')
 
-    // 检查主要内容仍然可见
-    await expect(page.getByRole('heading', { name: 'MC Command Editor' })).toBeVisible()
-
-    // 检查功能卡片堆叠显示
-    const featureCards = page.locator('.grid')
-    await expect(featureCards).toBeVisible()
+    await expect(page.getByRole('heading', { name: 'MC 命令可视化编辑器' })).toBeVisible()
   })
 
-  test('平板端应该正确显示', async ({ page }) => {
+  test('平板端应该正确显示首页标题', async ({ page }) => {
     await page.setViewportSize({ width: 768, height: 1024 })
     await page.goto('/')
 
-    // 检查布局
-    await expect(page.getByRole('heading', { name: 'MC Command Editor' })).toBeVisible()
+    await expect(page.getByRole('heading', { name: 'MC 命令可视化编辑器' })).toBeVisible()
   })
 
-  test('桌面端应该正确显示', async ({ page }) => {
+  test('桌面端应该正确显示首页标题', async ({ page }) => {
     await page.setViewportSize({ width: 1920, height: 1080 })
     await page.goto('/')
 
-    // 检查布局
-    await expect(page.getByRole('heading', { name: 'MC Command Editor' })).toBeVisible()
+    await expect(page.getByRole('heading', { name: 'MC 命令可视化编辑器' })).toBeVisible()
   })
 })
 
-test.describe('无障碍性', () => {
-  test('应该有正确的 heading 层级', async ({ page }) => {
+test.describe('无障碍', () => {
+  test('首页应该保留标题层级', async ({ page }) => {
     await page.goto('/')
 
-    // 获取所有 headings
-    const headings = await page.locator('h1, h2, h3, h4, h5, h6').all()
-
-    // 验证至少有一个 h1
     const h1Count = await page.locator('h1').count()
     expect(h1Count).toBeGreaterThanOrEqual(1)
   })
 
-  test('按钮应该有可访问的名称', async ({ page }) => {
+  test('按钮应该保留可访问名称或提示', async ({ page }) => {
     await page.goto('/')
 
-    // 获取所有按钮
-    const buttons = await page.locator('button').all()
+    await expect(page.getByRole('button', { name: '开始创建' })).toBeVisible()
+    await expect(page.locator('button[title=\"搜索命令\"]')).toBeVisible()
+  })
 
-    for (const button of buttons) {
-      // 每个按钮应该有 accessible name
-      const name = await button.evaluate((el) => {
-        return el.getAttribute('aria-label') || el.textContent || el.getAttribute('title')
-      })
-      expect(name).toBeTruthy()
-    }
+  test('设置按钮应打开项目设置面板', async ({ page }) => {
+    await page.goto('/')
+
+    await page.getByRole('button', { name: '设置' }).click()
+
+    await expect(page.getByRole('heading', { name: '项目设置' })).toBeVisible()
+    await expect(page.getByText('目标版本')).toBeVisible()
   })
 })

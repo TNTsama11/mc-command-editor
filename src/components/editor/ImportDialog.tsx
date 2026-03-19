@@ -1,39 +1,24 @@
-/**
- * 命令导入对话框组件
- *
- * 功能:
- * - 支持导入命令字符串（单行或多行）
- * - 实时验证命令有效性
- * - 显示解析错误和警告
- * - 支持将命令添加到历史记录
- * - 支持从剪贴板粘贴
- */
-
-import { useState, useCallback, useEffect, useMemo } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import {
-  Upload,
-  Clipboard,
-  CheckCircle,
   AlertCircle,
   AlertTriangle,
-  X,
-  History,
+  CheckCircle2,
+  Clipboard,
   Settings,
-  ChevronDown,
-  ChevronUp,
+  Upload,
+  X,
 } from 'lucide-react'
+
+import { Badge } from '@/components/ui/badge'
+import { Button } from '@/components/ui/button'
 import {
   Dialog,
   DialogContent,
-  DialogHeader,
-  DialogTitle,
   DialogDescription,
   DialogFooter,
+  DialogHeader,
+  DialogTitle,
 } from '@/components/ui/dialog'
-import { Button } from '@/components/ui/button'
-import { Textarea } from '@/components/ui/textarea'
-import { Badge } from '@/components/ui/badge'
-import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import {
   Select,
@@ -42,226 +27,106 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { cn } from '@/lib/utils'
+import { Textarea } from '@/components/ui/textarea'
 import {
+  formatParseError,
+  pasteFromClipboard,
   useImportStore,
   validateSingleCommand,
-  pasteFromClipboard,
-  formatParseError,
-  type ImportValidationResult,
   type ImportOptions,
+  type ImportValidationResult,
 } from '@/store/importStore'
 import { useHistoryStore } from '@/store/historyStore'
 
-// ============================================================================
-// 子组件
-// ============================================================================
-
-/** 验证结果指示器 */
-function ValidationIndicator({ result }: { result: ImportValidationResult | null }) {
+function ValidationSummary({ result }: { result: ImportValidationResult | null }) {
   if (!result) return null
 
-  const { isValid, errors, warnings } = result
+  if (result.isValid) {
+    return (
+      <div className="flex items-center gap-2 text-sm text-emerald-600">
+        <CheckCircle2 className="h-4 w-4" />
+        <span>当前命令校验通过</span>
+      </div>
+    )
+  }
 
   return (
-    <div className="flex items-center gap-3 text-sm">
-      {isValid ? (
-        <div className="flex items-center gap-1.5 text-green-600">
-          <CheckCircle className="h-4 w-4" />
-          <span>命令有效</span>
-        </div>
-      ) : (
-        <div className="flex items-center gap-1.5 text-red-600">
-          <AlertCircle className="h-4 w-4" />
-          <span>{errors.length} 个错误</span>
-        </div>
-      )}
-      {warnings.length > 0 && (
-        <div className="flex items-center gap-1.5 text-yellow-600">
+    <div className="flex items-center gap-4 text-sm">
+      <div className="flex items-center gap-2 text-destructive">
+        <AlertCircle className="h-4 w-4" />
+        <span>{result.errors.length} 个错误</span>
+      </div>
+      {result.warnings.length > 0 && (
+        <div className="flex items-center gap-2 text-amber-600">
           <AlertTriangle className="h-4 w-4" />
-          <span>{warnings.length} 个警告</span>
+          <span>{result.warnings.length} 个警告</span>
         </div>
       )}
     </div>
   )
 }
 
-/** 错误/警告列表 */
-function ValidationMessages({
+function ValidationList({
   errors,
   warnings,
-  maxVisible = 5,
 }: {
   errors: ImportValidationResult['errors']
   warnings: ImportValidationResult['warnings']
-  maxVisible?: number
 }) {
-  const [showAll, setShowAll] = useState(false)
-
-  if (errors.length === 0 && warnings.length === 0) return null
-
-  const displayErrors = showAll ? errors : errors.slice(0, maxVisible)
-  const displayWarnings = showAll ? warnings : warnings.slice(0, maxVisible)
-  const hasMore = errors.length + warnings.length > maxVisible && !showAll
+  if (errors.length === 0 && warnings.length === 0) {
+    return null
+  }
 
   return (
-    <div className="space-y-2 max-h-[150px] overflow-y-auto">
-      {/* 错误 */}
-      {displayErrors.map((error, index) => (
-        <div
-          key={`error-${index}`}
-          className="flex items-start gap-2 text-xs p-2 rounded bg-red-500/10 text-red-600"
-        >
-          <AlertCircle className="h-4 w-4 flex-shrink-0 mt-0.5" />
+    <div className="max-h-48 space-y-2 overflow-y-auto rounded-lg border p-3">
+      {errors.map((error, index) => (
+        <div key={`error-${index}`} className="flex items-start gap-2 text-sm text-destructive">
+          <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
           <span>{formatParseError(error)}</span>
         </div>
       ))}
-
-      {/* 警告 */}
-      {displayWarnings.map((warning, index) => (
-        <div
-          key={`warning-${index}`}
-          className="flex items-start gap-2 text-xs p-2 rounded bg-yellow-500/10 text-yellow-600"
-        >
-          <AlertTriangle className="h-4 w-4 flex-shrink-0 mt-0.5" />
+      {warnings.map((warning, index) => (
+        <div key={`warning-${index}`} className="flex items-start gap-2 text-sm text-amber-600">
+          <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
           <span>{warning}</span>
         </div>
       ))}
-
-      {/* 显示更多按钮 */}
-      {hasMore && (
-        <button
-          className="text-xs text-muted-foreground hover:text-foreground"
-          onClick={() => setShowAll(true)}
-        >
-          显示全部 ({errors.length + warnings.length} 条)
-        </button>
-      )}
     </div>
   )
 }
 
-/** 历史命令快速选择 */
-function HistorySelector({
-  history,
-  onSelect,
-}: {
-  history: string[]
-  onSelect: (command: string) => void
-}) {
-  if (history.length === 0) return null
-
-  return (
-    <div className="space-y-1">
-      <Label className="text-xs text-muted-foreground">最近导入</Label>
-      <div className="flex flex-wrap gap-1">
-        {history.slice(0, 5).map((cmd, index) => (
-          <Badge
-            key={index}
-            variant="outline"
-            className="cursor-pointer hover:bg-accent text-xs font-mono truncate max-w-[200px]"
-            onClick={() => onSelect(cmd)}
-          >
-            {cmd}
-          </Badge>
-        ))}
-      </div>
-    </div>
-  )
-}
-
-/** 选项面板 */
-function OptionsPanel({
-  options,
+function OptionSelect({
+  label,
+  value,
   onChange,
 }: {
-  options: ImportOptions
-  onChange: (options: Partial<ImportOptions>) => void
+  label: string
+  value: boolean
+  onChange: (next: boolean) => void
 }) {
   return (
-    <div className="grid grid-cols-2 gap-3">
-      <div className="flex items-center justify-between">
-        <Label className="text-xs">添加到历史记录</Label>
-        <Select
-          value={options.addToHistory ? 'true' : 'false'}
-          onValueChange={(v) => onChange({ addToHistory: v === 'true' })}
-        >
-          <SelectTrigger className="w-[80px] h-7 text-xs">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="true">是</SelectItem>
-            <SelectItem value="false">否</SelectItem>
-          </SelectContent>
-        </Select>
-      </div>
-
-      <div className="flex items-center justify-between">
-        <Label className="text-xs">忽略警告</Label>
-        <Select
-          value={options.ignoreWarnings ? 'true' : 'false'}
-          onValueChange={(v) => onChange({ ignoreWarnings: v === 'true' })}
-        >
-          <SelectTrigger className="w-[80px] h-7 text-xs">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="true">是</SelectItem>
-            <SelectItem value="false">否</SelectItem>
-          </SelectContent>
-        </Select>
-      </div>
-
-      <div className="flex items-center justify-between">
-        <Label className="text-xs">跳过空行</Label>
-        <Select
-          value={options.skipEmptyLines ? 'true' : 'false'}
-          onValueChange={(v) => onChange({ skipEmptyLines: v === 'true' })}
-        >
-          <SelectTrigger className="w-[80px] h-7 text-xs">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="true">是</SelectItem>
-            <SelectItem value="false">否</SelectItem>
-          </SelectContent>
-        </Select>
-      </div>
-
-      <div className="flex items-center justify-between">
-        <Label className="text-xs">移除注释</Label>
-        <Select
-          value={options.removeComments ? 'true' : 'false'}
-          onValueChange={(v) => onChange({ removeComments: v === 'true' })}
-        >
-          <SelectTrigger className="w-[80px] h-7 text-xs">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="true">是</SelectItem>
-            <SelectItem value="false">否</SelectItem>
-          </SelectContent>
-        </Select>
-      </div>
+    <div className="flex items-center justify-between gap-3">
+      <Label className="text-sm">{label}</Label>
+      <Select value={value ? 'true' : 'false'} onValueChange={(next) => onChange(next === 'true')}>
+        <SelectTrigger className="h-8 w-24">
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent>
+          <SelectItem value="true">开启</SelectItem>
+          <SelectItem value="false">关闭</SelectItem>
+        </SelectContent>
+      </Select>
     </div>
   )
 }
 
-// ============================================================================
-// 主组件
-// ============================================================================
-
 export interface ImportDialogProps {
-  /** 对话框是否打开 */
   open: boolean
-  /** 关闭回调 */
   onClose: () => void
-  /** 导入成功回调 */
   onImport?: (commands: string[]) => void
 }
 
 export function ImportDialog({ open, onClose, onImport }: ImportDialogProps) {
-  // Store 状态
   const inputText = useImportStore((state) => state.inputText)
   const validationResult = useImportStore((state) => state.validationResult)
   const options = useImportStore((state) => state.options)
@@ -270,57 +135,38 @@ export function ImportDialog({ open, onClose, onImport }: ImportDialogProps) {
   const clearInput = useImportStore((state) => state.clearInput)
   const updateOptions = useImportStore((state) => state.updateOptions)
   const addToImportHistory = useImportStore((state) => state.addToImportHistory)
-  const validateMultipleCommands = useImportStore((state) => state.validateMultipleCommands)
-
-  // History store
   const addToHistory = useHistoryStore((state) => state.addToHistory)
 
-  // 本地状态
   const [showOptions, setShowOptions] = useState(false)
   const [isPasting, setIsPasting] = useState(false)
 
-  // 解析输入的命令
   const parsedCommands = useMemo(() => {
-    const lines = inputText.split('\n')
-    return lines
+    return inputText
+      .split('\n')
       .map((line) => line.trim())
       .filter((line) => {
         if (options.skipEmptyLines && line.length === 0) return false
         if (options.removeComments && (line.startsWith('#') || line.startsWith('//'))) return false
         return true
       })
-  }, [inputText, options.skipEmptyLines, options.removeComments])
+  }, [inputText, options.removeComments, options.skipEmptyLines])
 
-  // 验证所有命令
-  const allValidationResults = useMemo(() => {
-    return parsedCommands.map((cmd) => validateSingleCommand(cmd))
-  }, [parsedCommands])
-
-  // 计算统计信息
-  const stats = useMemo(() => {
-    const total = allValidationResults.length
-    const valid = allValidationResults.filter((r) => r.isValid).length
-    const invalid = total - valid
-    const hasWarnings = allValidationResults.some((r) => r.warnings.length > 0)
-    return { total, valid, invalid, hasWarnings }
-  }, [allValidationResults])
-
-  // 是否可以导入
-  const canImport = useMemo(() => {
-    if (parsedCommands.length === 0) return false
-    if (stats.invalid > 0 && !options.ignoreWarnings) return false
-    return true
-  }, [parsedCommands.length, stats.invalid, options.ignoreWarnings])
-
-  // 处理输入变化
-  const handleInputChange = useCallback(
-    (e: React.ChangeEvent<HTMLTextAreaElement>) => {
-      setInputText(e.target.value)
-    },
-    [setInputText]
+  const multipleResults = useMemo(
+    () => parsedCommands.map((command) => validateSingleCommand(command)),
+    [parsedCommands]
   )
 
-  // 从剪贴板粘贴
+  const stats = useMemo(() => {
+    const total = multipleResults.length
+    const valid = multipleResults.filter((result) => result.isValid).length
+    const warnings = multipleResults.reduce((count, result) => count + result.warnings.length, 0)
+    const errors = multipleResults.reduce((count, result) => count + result.errors.length, 0)
+
+    return { total, valid, warnings, errors }
+  }, [multipleResults])
+
+  const canImport = parsedCommands.length > 0 && stats.errors === 0
+
   const handlePaste = useCallback(async () => {
     setIsPasting(true)
     try {
@@ -333,191 +179,168 @@ export function ImportDialog({ open, onClose, onImport }: ImportDialogProps) {
     }
   }, [setInputText])
 
-  // 从历史选择
-  const handleSelectFromHistory = useCallback(
+  const handleImport = useCallback(() => {
+    if (!canImport) {
+      return
+    }
+
+    if (options.addToHistory) {
+      parsedCommands.forEach((command) => {
+        addToHistory({
+          action: 'execute',
+          description: `导入命令: ${command}`,
+          data: { command },
+          type: 'command',
+        })
+        addToImportHistory(command)
+      })
+    }
+
+    onImport?.(parsedCommands)
+    clearInput()
+    onClose()
+  }, [addToHistory, addToImportHistory, canImport, clearInput, onClose, onImport, options.addToHistory, parsedCommands])
+
+  const applyHistoryCommand = useCallback(
     (command: string) => {
       setInputText(command)
     },
     [setInputText]
   )
 
-  // 执行导入
-  const handleImport = useCallback(() => {
-    if (!canImport) return
-
-    // 过滤有效命令
-    const validCommands = parsedCommands.filter((_, index) => {
-      const result = allValidationResults[index]
-      return result.isValid || (options.ignoreWarnings && result.errors.length === 0)
-    })
-
-    // 添加到历史记录
-    if (options.addToHistory) {
-      validCommands.forEach((cmd) => {
-        addToHistory({
-          action: 'execute',
-          description: `导入命令: ${cmd}`,
-          data: { command: cmd },
-          type: 'command',
-        })
-        addToImportHistory(cmd)
-      })
-    }
-
-    // 回调
-    onImport?.(validCommands)
-
-    // 清空并关闭
-    clearInput()
-    onClose()
-  }, [
-    canImport,
-    parsedCommands,
-    allValidationResults,
-    options.addToHistory,
-    options.ignoreWarnings,
-    addToHistory,
-    addToImportHistory,
-    onImport,
-    clearInput,
-    onClose,
-  ])
-
-  // 关闭时清空
   useEffect(() => {
     if (!open) {
-      // 延迟清空，避免关闭动画期间显示空白
-      const timer = setTimeout(() => {
-        clearInput()
-      }, 200)
-      return () => clearTimeout(timer)
+      const timer = window.setTimeout(() => clearInput(), 150)
+      return () => window.clearTimeout(timer)
     }
-  }, [open, clearInput])
+  }, [clearInput, open])
+
+  const singleResult = parsedCommands.length <= 1 ? validationResult : null
 
   return (
-    <Dialog open={open} onOpenChange={(isOpen) => !isOpen && onClose()}>
-      <DialogContent className="max-w-2xl max-h-[90vh] flex flex-col">
+    <Dialog open={open} onOpenChange={(nextOpen) => !nextOpen && onClose()}>
+      <DialogContent className="max-w-3xl">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <Upload className="h-5 w-5" />
             导入命令
           </DialogTitle>
           <DialogDescription>
-            粘贴或输入 Minecraft 命令，支持多行导入。每行一个命令，以 / 开头。
+            支持单行或多行导入。每行一条命令，可保留原生命令写法。
           </DialogDescription>
         </DialogHeader>
 
-        <div className="flex-1 overflow-auto space-y-4">
-          {/* 输入区域 */}
+        <div className="space-y-4">
           <div className="space-y-2">
-            <div className="flex items-center justify-between">
-              <Label>命令输入</Label>
+            <div className="flex items-center justify-between gap-3">
+              <Label htmlFor="import-command-text">命令输入</Label>
               <div className="flex items-center gap-2">
-                {inputText.length > 0 && (
-                  <Badge variant="outline" className="text-xs">
-                    {parsedCommands.length} 行命令
-                  </Badge>
+                {parsedCommands.length > 0 && (
+                  <Badge variant="outline">{parsedCommands.length} 条命令</Badge>
                 )}
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={handlePaste}
-                  disabled={isPasting}
-                  className="h-7"
-                >
-                  <Clipboard className="h-3 w-3 mr-1" />
+                <Button variant="outline" size="sm" onClick={handlePaste} disabled={isPasting}>
+                  <Clipboard className="mr-2 h-4 w-4" />
                   {isPasting ? '粘贴中...' : '从剪贴板粘贴'}
                 </Button>
-                {inputText.length > 0 && (
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={clearInput}
-                    className="h-7"
-                  >
-                    <X className="h-3 w-3" />
+                {inputText && (
+                  <Button variant="ghost" size="sm" onClick={clearInput}>
+                    <X className="mr-2 h-4 w-4" />
                     清空
                   </Button>
                 )}
               </div>
             </div>
             <Textarea
-              placeholder={`输入命令，例如：
-/give @p minecraft:diamond 64
-/tp @a ~ ~ ~
-/effect give @s minecraft:speed 60 1
-
-每行一个命令，以 / 开头`}
+              id="import-command-text"
               value={inputText}
-              onChange={handleInputChange}
-              className="min-h-[200px] font-mono text-sm"
+              onChange={(event) => setInputText(event.target.value)}
+              placeholder={`/give @p minecraft:diamond 64
+/execute as @a at @s run summon lightning_bolt
+# 以 # 或 // 开头的注释可按选项忽略`}
+              className="min-h-56 font-mono text-sm"
               autoFocus
             />
           </div>
 
-          {/* 验证结果 */}
-          {validationResult && (
+          {singleResult && (
             <div className="space-y-2">
-              <ValidationIndicator result={validationResult} />
-              <ValidationMessages
-                errors={validationResult.errors}
-                warnings={validationResult.warnings}
-              />
+              <ValidationSummary result={singleResult} />
+              <ValidationList errors={singleResult.errors} warnings={singleResult.warnings} />
             </div>
           )}
 
-          {/* 多行命令统计 */}
           {parsedCommands.length > 1 && (
-            <div className="flex items-center gap-4 text-sm">
-              <Badge variant="secondary">总计: {stats.total}</Badge>
-              <Badge variant="outline" className="text-green-600 border-green-600">
-                有效: {stats.valid}
-              </Badge>
-              {stats.invalid > 0 && (
-                <Badge variant="outline" className="text-red-600 border-red-600">
-                  无效: {stats.invalid}
-                </Badge>
-              )}
+            <div className="rounded-lg border p-3 text-sm">
+              <div className="flex flex-wrap gap-3">
+                <span>总数 {stats.total}</span>
+                <span className="text-emerald-600">有效 {stats.valid}</span>
+                {stats.errors > 0 && <span className="text-destructive">错误 {stats.errors}</span>}
+                {stats.warnings > 0 && <span className="text-amber-600">警告 {stats.warnings}</span>}
+              </div>
             </div>
           )}
 
-          {/* 历史命令 */}
           {importHistory.length > 0 && (
-            <HistorySelector
-              history={importHistory}
-              onSelect={handleSelectFromHistory}
-            />
+            <div className="space-y-2">
+              <Label>最近导入</Label>
+              <div className="flex flex-wrap gap-2">
+                {importHistory.slice(0, 6).map((command, index) => (
+                  <Badge
+                    key={`${command}-${index}`}
+                    variant="outline"
+                    className="max-w-[320px] cursor-pointer truncate font-mono"
+                    onClick={() => applyHistoryCommand(command)}
+                  >
+                    {command}
+                  </Badge>
+                ))}
+              </div>
+            </div>
           )}
 
-          {/* 选项折叠面板 */}
-          <div className="border-t pt-3">
+          <div className="rounded-lg border p-3">
             <button
-              className="flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground"
-              onClick={() => setShowOptions(!showOptions)}
+              type="button"
+              className="flex items-center gap-2 text-sm font-medium"
+              onClick={() => setShowOptions((value) => !value)}
             >
               <Settings className="h-4 w-4" />
               导入选项
-              {showOptions ? (
-                <ChevronUp className="h-4 w-4" />
-              ) : (
-                <ChevronDown className="h-4 w-4" />
-              )}
             </button>
             {showOptions && (
-              <div className="mt-3 p-3 bg-muted/50 rounded-lg">
-                <OptionsPanel options={options} onChange={updateOptions} />
+              <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                <OptionSelect
+                  label="写入导入历史"
+                  value={options.addToHistory}
+                  onChange={(next) => updateOptions({ addToHistory: next })}
+                />
+                <OptionSelect
+                  label="忽略警告"
+                  value={options.ignoreWarnings}
+                  onChange={(next) => updateOptions({ ignoreWarnings: next })}
+                />
+                <OptionSelect
+                  label="跳过空行"
+                  value={options.skipEmptyLines}
+                  onChange={(next) => updateOptions({ skipEmptyLines: next })}
+                />
+                <OptionSelect
+                  label="移除注释"
+                  value={options.removeComments}
+                  onChange={(next) => updateOptions({ removeComments: next })}
+                />
               </div>
             )}
           </div>
         </div>
 
-        <DialogFooter className="border-t pt-4">
+        <DialogFooter>
           <Button variant="outline" onClick={onClose}>
             取消
           </Button>
           <Button onClick={handleImport} disabled={!canImport}>
-            <Upload className="h-4 w-4 mr-2" />
-            导入 {parsedCommands.length > 0 ? `(${parsedCommands.length})` : ''}
+            <Upload className="mr-2 h-4 w-4" />
+            导入{parsedCommands.length > 0 ? ` (${parsedCommands.length})` : ''}
           </Button>
         </DialogFooter>
       </DialogContent>

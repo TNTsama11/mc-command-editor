@@ -1,35 +1,14 @@
-/**
- * 命令历史记录状态管理 Store
- *
- * 功能:
- * - 保存命令执行历史
- * - 支持撤销/重做操作
- * - 命令数量限制 (可配置, 默认 100 条)
- * - 时间范围限制 (可配置, 默认 24 小时过期)
- */
-
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
 
-// ============================================================================
-// 类型定义
-// ============================================================================
-
-/**
- * 历史记录配置
- */
 export interface HistoryConfig {
-  /** 最大历史条目数量 */
   maxEntries: number
-  /** 历史记录过期时间 (毫秒), 0 表示不过期 */
   expirationTime: number
-  /** 是否启用撤销功能 */
   enableUndo: boolean
 }
 
-/**
- * 历史记录项类型
- */
+export type HistoryAction = 'execute' | 'create' | 'modify' | 'delete'
+
 export interface HistoryItem {
   id: string
   timestamp: number
@@ -37,27 +16,15 @@ export interface HistoryItem {
   description: string
   data: unknown
   type: 'command' | 'block' | 'project'
-  /** 是否已撤销 */
   undone?: boolean
 }
 
-/**
- * 历史操作类型
- */
-export type HistoryAction = 'execute' | 'create' | 'modify' | 'delete'
-
-/**
- * 历史统计信息
- */
 export interface HistoryStats {
   totalCommands: number
   totalBlocks: number
   lastActionTime: number | null
 }
 
-/**
- * 确认对话框状态
- */
 export interface ConfirmDialogState {
   open: boolean
   title: string
@@ -66,90 +33,70 @@ export interface ConfirmDialogState {
   onCancel: (() => void) | null
 }
 
-// ============================================================================
-// 默认配置
-// ============================================================================
-
-const DEFAULT_CONFIG: HistoryConfig = {
-  maxEntries: 100,
-  expirationTime: 24 * 60 * 60 * 1000, // 24 小时
-  enableUndo: true,
-}
-
-/**
- * 历史记录状态接口
- */
 interface HistoryState {
-  // 历史记录列表
   history: HistoryItem[]
-  // 已撤销的操作栈（用于重做）
   redoStack: HistoryItem[]
-  // 配置
   config: HistoryConfig
-  // 统计信息
   stats: HistoryStats
-  // 确认对话框状态
   confirmDialog: ConfirmDialogState
 
-  // 添加历史记录
   addToHistory: (item: Omit<HistoryItem, 'id' | 'timestamp'>) => void
-  // 撤销操作
   undo: () => HistoryItem | null
-  // 重做操作
   redo: () => HistoryItem | null
-  // 清空历史
   clearHistory: () => void
-  // 清理过期条目
   clearExpired: () => void
-  // 从历史中移除指定项
   removeFromHistory: (id: string) => void
-  // 批量删除
   batchRemove: (ids: string[]) => void
-  // 更新统计信息
   updateStats: () => void
-  // 更新配置
   updateConfig: (config: Partial<HistoryConfig>) => void
-  // 获取可撤销状态
   canUndo: () => boolean
-  // 获取可重做状态
   canRedo: () => boolean
-  // 显示确认对话框
   showConfirmDialog: (options: {
     title: string
     description: string
     onConfirm: () => void
     onCancel?: () => void
   }) => void
-  // 关闭确认对话框
   closeConfirmDialog: () => void
-  // 确认撤销
-  confirmUndo: () => void
-  // 按时间范围获取条目
+  confirmUndo: () => HistoryItem | null
   getEntriesByTimeRange: (start: number, end: number) => HistoryItem[]
-  // 按类型获取条目
   getEntriesByType: (type: HistoryItem['type']) => HistoryItem[]
-  // 搜索条目
   searchEntries: (keyword: string) => HistoryItem[]
 }
 
-/**
- * 生成唯一ID
- */
-function generateId(): string {
-  return `hist_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`
+const DEFAULT_CONFIG: HistoryConfig = {
+  maxEntries: 100,
+  expirationTime: 24 * 60 * 60 * 1000,
+  enableUndo: true,
 }
 
-/**
- * 检查条目是否过期
- */
-function isEntryExpired(entry: HistoryItem, expirationTime: number): boolean {
+function generateId() {
+  return `hist_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`
+}
+
+function isEntryExpired(entry: HistoryItem, expirationTime: number) {
   if (expirationTime <= 0) return false
   return Date.now() - entry.timestamp > expirationTime
 }
 
-/**
- * 历史记录 Store
- */
+function calculateStats(history: HistoryItem[]): HistoryStats {
+  return {
+    totalCommands: history.filter((item) => item.type === 'command').length,
+    totalBlocks: history.filter((item) => item.type === 'block').length,
+    lastActionTime: history[0]?.timestamp ?? null,
+  }
+}
+
+function createEmptyConfirmDialog(): ConfirmDialogState {
+  return {
+    open: false,
+    title: '',
+    description: '',
+    onConfirm: null,
+    onCancel: null,
+  }
+}
+
 export const useHistoryStore = create<HistoryState>()(
   persist(
     (set, get) => ({
@@ -161,20 +108,11 @@ export const useHistoryStore = create<HistoryState>()(
         totalBlocks: 0,
         lastActionTime: null,
       },
-      confirmDialog: {
-        open: false,
-        title: '',
-        description: '',
-        onConfirm: null,
-        onCancel: null,
-      },
+      confirmDialog: createEmptyConfirmDialog(),
 
-      /**
-       * 添加历史记录
-       */
       addToHistory: (item) => {
         const { config } = get()
-        const newItem: HistoryItem = {
+        const nextItem: HistoryItem = {
           ...item,
           id: generateId(),
           timestamp: Date.now(),
@@ -182,85 +120,59 @@ export const useHistoryStore = create<HistoryState>()(
         }
 
         set((state) => {
-          // 清理过期条目
-          let filteredHistory = state.history
-          if (config.expirationTime > 0) {
-            filteredHistory = state.history.filter(
-              (entry) => !isEntryExpired(entry, config.expirationTime)
-            )
-          }
+          const unexpiredHistory =
+            config.expirationTime > 0
+              ? state.history.filter((entry) => !isEntryExpired(entry, config.expirationTime))
+              : state.history
 
-          // 添加新记录到历史列表开头，并限制数量
-          const newHistory = [newItem, ...filteredHistory].slice(0, config.maxEntries)
+          const nextHistory = [nextItem, ...unexpiredHistory].slice(0, config.maxEntries)
 
-          // 添加新操作时清空重做栈
           return {
-            history: newHistory,
+            history: nextHistory,
             redoStack: [],
+            stats: calculateStats(nextHistory),
           }
         })
-
-        // 更新统计
-        get().updateStats()
       },
 
-      /**
-       * 撤销操作
-       */
       undo: () => {
         const { history, redoStack, confirmDialog } = get()
-
-        if (history.length === 0) {
+        if (history.length === 0 || confirmDialog.open) {
           return null
         }
 
-        // 如果确认对话框已打开，直接执行撤销
-        if (confirmDialog.open) {
-          return null
-        }
-
-        // 取出最近的历史记录
-        const [lastItem, ...remainingHistory] = history
+        const [latest, ...remaining] = history
 
         set({
-          history: remainingHistory,
-          redoStack: [lastItem, ...redoStack],
+          history: remaining,
+          redoStack: [latest, ...redoStack],
+          stats: calculateStats(remaining),
         })
 
-        // 更新统计
-        get().updateStats()
-
-        return lastItem
+        return latest
       },
 
-      /**
-       * 重做操作
-       */
       redo: () => {
         const { redoStack } = get()
-
         if (redoStack.length === 0) {
           return null
         }
 
-        // 取出最近的重做记录
-        const [lastRedo, ...remainingRedo] = redoStack
+        const [latest, ...remaining] = redoStack
 
-        set((state) => ({
-          redoStack: remainingRedo,
-          history: [lastRedo, ...state.history],
-        }))
+        set((state) => {
+          const nextHistory = [latest, ...state.history]
+          return {
+            redoStack: remaining,
+            history: nextHistory,
+            stats: calculateStats(nextHistory),
+          }
+        })
 
-        // 更新统计
-        get().updateStats()
-
-        return lastRedo
+        return latest
       },
 
-      /**
-       * 清空历史记录
-       */
-      clearHistory: () => {
+      clearHistory: () =>
         set({
           history: [],
           redoStack: [],
@@ -269,187 +181,102 @@ export const useHistoryStore = create<HistoryState>()(
             totalBlocks: 0,
             lastActionTime: null,
           },
-        })
-      },
+        }),
 
-      /**
-       * 清理过期条目
-       */
       clearExpired: () => {
         const { config, history } = get()
-        if (config.expirationTime <= 0) return
+        if (config.expirationTime <= 0) {
+          return
+        }
 
+        const nextHistory = history.filter((entry) => !isEntryExpired(entry, config.expirationTime))
         set({
-          history: history.filter((entry) => !isEntryExpired(entry, config.expirationTime)),
+          history: nextHistory,
+          stats: calculateStats(nextHistory),
         })
-
-        get().updateStats()
       },
 
-      /**
-       * 更新配置
-       */
-      updateConfig: (newConfig) => {
-        set((state) => ({
-          config: { ...state.config, ...newConfig },
-        }))
+      removeFromHistory: (id) =>
+        set((state) => {
+          const nextHistory = state.history.filter((item) => item.id !== id)
+          return {
+            history: nextHistory,
+            stats: calculateStats(nextHistory),
+          }
+        }),
 
-        // 如果新的配置减少了最大条目数，需要裁剪现有历史
-        const { config, history } = get()
-        if (history.length > config.maxEntries) {
-          set({
-            history: history.slice(0, config.maxEntries),
-          })
-        }
-      },
+      batchRemove: (ids) =>
+        set((state) => {
+          const idSet = new Set(ids)
+          const nextHistory = state.history.filter((item) => !idSet.has(item.id))
+          return {
+            history: nextHistory,
+            stats: calculateStats(nextHistory),
+          }
+        }),
 
-      /**
-       * 从历史中移除指定项
-       */
-      removeFromHistory: (id: string) => {
-        set((state) => ({
-          history: state.history.filter((item) => item.id !== id),
-        }))
-
-        // 更新统计
-        get().updateStats()
-      },
-
-      /**
-       * 批量删除
-       */
-      batchRemove: (ids: string[]) => {
-        const idSet = new Set(ids)
-        set((state) => ({
-          history: state.history.filter((item) => !idSet.has(item.id)),
-        }))
-
-        // 更新统计
-        get().updateStats()
-      },
-
-      /**
-       * 更新统计信息
-       */
       updateStats: () => {
-        const { history } = get()
-
-        const stats: HistoryStats = {
-          totalCommands: history.filter((item) => item.type === 'command')
-            .length,
-          totalBlocks: history.filter((item) => item.type === 'block').length,
-          lastActionTime: history.length > 0 ? history[0].timestamp : null,
-        }
-
-        set({ stats })
+        set((state) => ({
+          stats: calculateStats(state.history),
+        }))
       },
 
-      /**
-       * 获取可撤销状态
-       */
-      canUndo: () => {
-        return get().history.length > 0
-      },
+      updateConfig: (config) =>
+        set((state) => {
+          const nextConfig = { ...state.config, ...config }
+          const nextHistory = state.history.slice(0, nextConfig.maxEntries)
 
-      /**
-       * 获取可重做状态
-       */
-      canRedo: () => {
-        return get().redoStack.length > 0
-      },
+          return {
+            config: nextConfig,
+            history: nextHistory,
+            stats: calculateStats(nextHistory),
+          }
+        }),
 
-      /**
-       * 显示确认对话框
-       */
-      showConfirmDialog: (options) => {
+      canUndo: () => get().history.length > 0,
+      canRedo: () => get().redoStack.length > 0,
+
+      showConfirmDialog: ({ title, description, onConfirm, onCancel }) =>
         set({
           confirmDialog: {
             open: true,
-            title: options.title,
-            description: options.description,
-            onConfirm: options.onConfirm,
-            onCancel: options.onCancel ?? null,
+            title,
+            description,
+            onConfirm,
+            onCancel: onCancel ?? null,
           },
-        })
-      },
+        }),
 
-      /**
-       * 关闭确认对话框
-       */
       closeConfirmDialog: () => {
         const { confirmDialog } = get()
-        if (confirmDialog.onCancel) {
-          confirmDialog.onCancel()
-        }
-        set({
-          confirmDialog: {
-            open: false,
-            title: '',
-            description: '',
-            onConfirm: null,
-            onCancel: null,
-          },
-        })
+        confirmDialog.onCancel?.()
+        set({ confirmDialog: createEmptyConfirmDialog() })
       },
 
-      /**
-       * 确认撤销操作
-       */
       confirmUndo: () => {
         const { confirmDialog } = get()
-
-        if (confirmDialog.onConfirm) {
-          confirmDialog.onConfirm()
-        }
-
-        // 执行撤销
-        const undoedItem = get().undo()
-
-        // 重置对话框
-        set({
-          confirmDialog: {
-            open: false,
-            title: '',
-            description: '',
-            onConfirm: null,
-            onCancel: null,
-          },
-        })
-
-        return undoedItem
+        confirmDialog.onConfirm?.()
+        const undone = get().undo()
+        set({ confirmDialog: createEmptyConfirmDialog() })
+        return undone
       },
 
-      /**
-       * 按时间范围获取条目
-       */
-      getEntriesByTimeRange: (start, end) => {
-        return get().history.filter(
-          (entry) => entry.timestamp >= start && entry.timestamp <= end
-        )
-      },
+      getEntriesByTimeRange: (start, end) =>
+        get().history.filter((entry) => entry.timestamp >= start && entry.timestamp <= end),
 
-      /**
-       * 按类型获取条目
-       */
-      getEntriesByType: (type) => {
-        return get().history.filter((entry) => entry.type === type)
-      },
+      getEntriesByType: (type) => get().history.filter((entry) => entry.type === type),
 
-      /**
-       * 搜索条目
-       */
       searchEntries: (keyword) => {
-        const lowerKeyword = keyword.toLowerCase()
+        const normalizedKeyword = keyword.toLowerCase()
         return get().history.filter(
           (entry) =>
-            entry.description.toLowerCase().includes(lowerKeyword) ||
-            entry.action.toLowerCase().includes(lowerKeyword)
+            entry.description.toLowerCase().includes(normalizedKeyword) ||
+            entry.action.toLowerCase().includes(normalizedKeyword)
         )
       },
     }),
     {
       name: 'mc-editor-history',
-      // 持久化配置
       partialize: (state) => ({
         history: state.history,
         redoStack: state.redoStack,
@@ -460,66 +287,45 @@ export const useHistoryStore = create<HistoryState>()(
   )
 )
 
-/**
- * Hook: 获取历史记录快捷操作
- */
 export function useHistoryActions() {
-  const store = useHistoryStore
-
-  return {
-    addToHistory: store.getState().addToHistory,
-    undo: store.getState().undo,
-    redo: store.getState().redo,
-    clearHistory: store.getState().clearHistory,
-    removeFromHistory: store.getState().removeFromHistory,
-    batchRemove: store.getState().batchRemove,
-    confirmUndo: store.getState().confirmUndo,
-    showConfirmDialog: store.getState().showConfirmDialog,
-    closeConfirmDialog: store.getState().closeConfirmDialog,
-  }
+  return useHistoryStore((state) => ({
+    addToHistory: state.addToHistory,
+    undo: state.undo,
+    redo: state.redo,
+    clearHistory: state.clearHistory,
+    removeFromHistory: state.removeFromHistory,
+    batchRemove: state.batchRemove,
+    confirmUndo: state.confirmUndo,
+    showConfirmDialog: state.showConfirmDialog,
+    closeConfirmDialog: state.closeConfirmDialog,
+  }))
 }
 
-/**
- * Hook: 获取历史统计信息
- */
 export function useHistoryStats() {
   return useHistoryStore((state) => state.stats)
 }
 
-/**
- * Hook: 获取撤销/重做状态
- */
 export function useUndoRedoState() {
-  const canUndo = useHistoryStore((state) => state.history.length > 0)
-  const canRedo = useHistoryStore((state) => state.redoStack.length > 0)
-
-  return { canUndo, canRedo }
+  return {
+    canUndo: useHistoryStore((state) => state.history.length > 0),
+    canRedo: useHistoryStore((state) => state.redoStack.length > 0),
+  }
 }
 
-/**
- * Hook: 获取历史配置
- */
 export function useHistoryConfig() {
   return useHistoryStore((state) => state.config)
 }
 
-// ============================================================================
-// 辅助函数
-// ============================================================================
-
-/**
- * 格式化时间戳为可读字符串
- */
 export function formatTimestamp(timestamp: number): string {
   const date = new Date(timestamp)
-  const now = new Date()
-  const diffMs = now.getTime() - timestamp
-  const diffMins = Math.floor(diffMs / 60000)
+  const now = Date.now()
+  const diffMs = now - timestamp
+  const diffMinutes = Math.floor(diffMs / 60000)
   const diffHours = Math.floor(diffMs / 3600000)
   const diffDays = Math.floor(diffMs / 86400000)
 
-  if (diffMins < 1) return '刚刚'
-  if (diffMins < 60) return `${diffMins} 分钟前`
+  if (diffMinutes < 1) return '刚刚'
+  if (diffMinutes < 60) return `${diffMinutes} 分钟前`
   if (diffHours < 24) return `${diffHours} 小时前`
   if (diffDays < 7) return `${diffDays} 天前`
 
@@ -531,40 +337,34 @@ export function formatTimestamp(timestamp: number): string {
   })
 }
 
-/**
- * 获取操作类型的显示文本
- */
 export function getActionText(action: HistoryAction): string {
-  const actionMap: Record<HistoryAction, string> = {
+  const labels: Record<HistoryAction, string> = {
     execute: '执行',
     create: '创建',
     modify: '修改',
     delete: '删除',
   }
-  return actionMap[action]
+
+  return labels[action]
 }
 
-/**
- * 获取操作类型的样式类名
- */
 export function getActionStyle(action: HistoryAction): string {
-  const styleMap: Record<HistoryAction, string> = {
+  const styles: Record<HistoryAction, string> = {
     execute: 'bg-blue-500/10 text-blue-600 border-blue-500/20',
     create: 'bg-green-500/10 text-green-600 border-green-500/20',
     modify: 'bg-yellow-500/10 text-yellow-600 border-yellow-500/20',
     delete: 'bg-red-500/10 text-red-600 border-red-500/20',
   }
-  return styleMap[action]
+
+  return styles[action]
 }
 
-/**
- * 获取类型显示文本
- */
 export function getTypeText(type: HistoryItem['type']): string {
-  const typeMap: Record<HistoryItem['type'], string> = {
+  const labels: Record<HistoryItem['type'], string> = {
     command: '命令',
     block: '方块',
     project: '项目',
   }
-  return typeMap[type]
+
+  return labels[type]
 }

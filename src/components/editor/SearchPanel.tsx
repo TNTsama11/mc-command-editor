@@ -1,62 +1,28 @@
-/**
- * SearchPanel - 搜索面板组件
- *
- * 整合搜索功能的面板:
- * - 搜索输入
- * - 过滤条件
- * - 搜索结果
- * - 预设模板
- * - 搜索历史
- */
+import { useCallback, useMemo, useState } from 'react'
+import { History, Lightbulb, Search, Settings, Star, X } from 'lucide-react'
 
-import { useState, useCallback } from 'react'
-import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
+import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
-import {
-  Search,
-  History,
-  Star,
-  Settings,
-  ChevronDown,
-  ChevronUp,
-  Lightbulb,
-  X,
-} from 'lucide-react'
-import { SearchInput } from './SearchInput'
 import { SearchFilter } from './SearchFilter'
+import { SearchInput } from './SearchInput'
 import { SearchResults } from './SearchResults'
 import {
-  useSearchStore,
   TAG_LABELS,
-  type SearchTemplate,
   type SearchResult,
+  type SearchTemplate,
+  useSearchStore,
 } from '@/store/searchStore'
 
-// ============================================================================
-// 组件 Props 定义
-// ============================================================================
-
 export interface SearchPanelProps {
-  /** 自定义类名 */
   className?: string
-  /** 是否显示过滤面板 */
   showFilters?: boolean
-  /** 是否显示预设模板 */
   showTemplates?: boolean
-  /** 是否显示历史记录 */
   showHistory?: boolean
-  /** 选择命令回调 */
   onSelectCommand?: (name: string, result: SearchResult) => void
-  /** 选择模板回调 */
   onSelectTemplate?: (template: SearchResult) => void
-  /** 复制命令回调 */
   onCopyCommand?: (command: string) => void
 }
-
-// ============================================================================
-// SearchPanel 组件
-// ============================================================================
 
 export function SearchPanel({
   className,
@@ -67,39 +33,37 @@ export function SearchPanel({
   onSelectTemplate,
   onCopyCommand,
 }: SearchPanelProps) {
-  // 状态
-  const [isFilterExpanded, setIsFilterExpanded] = useState(false)
   const [activeTab, setActiveTab] = useState<'results' | 'templates' | 'history'>('results')
+  const [showFilterPanel, setShowFilterPanel] = useState(false)
 
-  // Store
   const query = useSearchStore((state) => state.query)
   const results = useSearchStore((state) => state.results)
   const searchHistory = useSearchStore((state) => state.searchHistory)
   const templates = useSearchStore((state) => state.templates)
-  const getFavoriteTemplates = useSearchStore((state) => state.getFavoriteTemplates)
-  const getRecentTemplates = useSearchStore((state) => state.getRecentTemplates)
+  const clearAll = useSearchStore((state) => state.clearAll)
   const clearSearchHistory = useSearchStore((state) => state.clearSearchHistory)
   const incrementUsage = useSearchStore((state) => state.incrementUsage)
-  const clearAll = useSearchStore((state) => state.clearAll)
+  const setQuery = useSearchStore((state) => state.setQuery)
+  const getFavoriteTemplates = useSearchStore((state) => state.getFavoriteTemplates)
+  const getRecentTemplates = useSearchStore((state) => state.getRecentTemplates)
 
-  // 获取收藏和最近模板
-  const favoriteTemplates = getFavoriteTemplates()
-  const recentTemplates = getRecentTemplates(5)
+  const hasSearchContent = query.trim().length > 0
 
-  // 处理选择模板
+  const favoriteTemplates = useMemo(() => getFavoriteTemplates(), [getFavoriteTemplates, templates])
+  const recentTemplates = useMemo(() => getRecentTemplates(5), [getRecentTemplates, templates])
+
   const handleSelectTemplate = useCallback(
     (result: SearchResult) => {
-      const template = templates.find((t) => t.name === result.name)
+      const template = templates.find((item) => item.name === result.name)
       if (template) {
         incrementUsage(template.id)
       }
       onSelectTemplate?.(result)
     },
-    [templates, incrementUsage, onSelectTemplate]
+    [incrementUsage, onSelectTemplate, templates]
   )
 
-  // 处理快速选择模板
-  const handleQuickSelectTemplate = useCallback(
+  const handleQuickTemplateSelect = useCallback(
     (template: SearchTemplate) => {
       incrementUsage(template.id)
       onSelectTemplate?.({
@@ -115,127 +79,66 @@ export function SearchPanel({
     [incrementUsage, onSelectTemplate]
   )
 
-  // 处理清除所有
-  const handleClearAll = useCallback(() => {
-    clearAll()
-  }, [clearAll])
-
-  // 检查是否有搜索内容
-  const hasSearchContent = query.trim().length > 0
-
   return (
-    <div className={cn('flex flex-col h-full', className)}>
-      {/* 头部 */}
-      <div className="flex-shrink-0 p-4 border-b space-y-4">
-        {/* 搜索输入 */}
+    <div className={cn('flex h-full flex-col', className)}>
+      <div className="space-y-4 border-b p-4">
         <SearchInput
-          placeholder="搜索命令、模板或描述..."
+          placeholder="搜索命令、模板或描述"
           showSearchButton={false}
           showHistory={false}
           onSelectHistory={() => setActiveTab('results')}
         />
 
-        {/* 快捷操作 */}
-        <div className="flex items-center justify-between">
+        <div className="flex items-center justify-between gap-2">
           <div className="flex items-center gap-2">
-            {/* 过滤展开按钮 */}
             {showFilters && (
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                className="h-8"
-                onClick={() => setIsFilterExpanded(!isFilterExpanded)}
-              >
-                <Settings className="h-3 w-3 mr-1" />
+              <Button variant="outline" size="sm" onClick={() => setShowFilterPanel((value) => !value)}>
+                <Settings className="mr-2 h-4 w-4" />
                 过滤
-                {isFilterExpanded ? (
-                  <ChevronUp className="h-3 w-3 ml-1" />
-                ) : (
-                  <ChevronDown className="h-3 w-3 ml-1" />
-                )}
               </Button>
             )}
-
-            {/* 清除按钮 */}
             {hasSearchContent && (
-              <Button
-                type="button"
-                variant="ghost"
-                size="sm"
-                className="h-8 text-muted-foreground"
-                onClick={handleClearAll}
-              >
-                <X className="h-3 w-3 mr-1" />
-                清除
+              <Button variant="ghost" size="sm" onClick={clearAll}>
+                <X className="mr-2 h-4 w-4" />
+                清空
               </Button>
             )}
           </div>
-
-          {/* 结果统计 */}
-          {hasSearchContent && (
-            <span className="text-xs text-muted-foreground">
-              {results.length} 个结果
-            </span>
-          )}
+          {hasSearchContent && <span className="text-xs text-muted-foreground">{results.length} 个结果</span>}
         </div>
 
-        {/* 过滤面板 */}
-        {showFilters && isFilterExpanded && (
-          <div className="pt-2 border-t">
+        {showFilters && showFilterPanel && (
+          <div className="rounded-lg border p-3">
             <SearchFilter compact />
           </div>
         )}
       </div>
 
-      {/* 标签页切换 */}
-      <div className="flex-shrink-0 border-b">
-        <div className="flex">
-          <TabButton
-            active={activeTab === 'results'}
-            onClick={() => setActiveTab('results')}
-            disabled={!hasSearchContent}
-          >
-            <Search className="h-3 w-3 mr-1" />
-            结果
-            {hasSearchContent && (
-              <Badge variant="secondary" className="ml-1 h-4 px-1 text-xs">
-                {results.length}
-              </Badge>
-            )}
+      <div className="flex border-b">
+        <TabButton active={activeTab === 'results'} onClick={() => setActiveTab('results')} disabled={!hasSearchContent}>
+          <Search className="mr-1 h-4 w-4" />
+          结果
+          {hasSearchContent && <Badge variant="secondary" className="ml-2">{results.length}</Badge>}
+        </TabButton>
+
+        {showTemplates && (
+          <TabButton active={activeTab === 'templates'} onClick={() => setActiveTab('templates')}>
+            <Star className="mr-1 h-4 w-4" />
+            模板
+            <Badge variant="secondary" className="ml-2">{templates.length}</Badge>
           </TabButton>
+        )}
 
-          {showTemplates && (
-            <TabButton
-              active={activeTab === 'templates'}
-              onClick={() => setActiveTab('templates')}
-            >
-              <Star className="h-3 w-3 mr-1" />
-              模板
-              <Badge variant="secondary" className="ml-1 h-4 px-1 text-xs">
-                {templates.length}
-              </Badge>
-            </TabButton>
-          )}
-
-          {showHistory && (
-            <TabButton
-              active={activeTab === 'history'}
-              onClick={() => setActiveTab('history')}
-            >
-              <History className="h-3 w-3 mr-1" />
-              历史
-              <Badge variant="secondary" className="ml-1 h-4 px-1 text-xs">
-                {searchHistory.length}
-              </Badge>
-            </TabButton>
-          )}
-        </div>
+        {showHistory && (
+          <TabButton active={activeTab === 'history'} onClick={() => setActiveTab('history')}>
+            <History className="mr-1 h-4 w-4" />
+            历史
+            <Badge variant="secondary" className="ml-2">{searchHistory.length}</Badge>
+          </TabButton>
+        )}
       </div>
 
-      {/* 内容区域 */}
       <div className="flex-1 overflow-y-auto">
-        {/* 搜索结果 */}
         {activeTab === 'results' && (
           <div className="p-4">
             <SearchResults
@@ -247,101 +150,60 @@ export function SearchPanel({
           </div>
         )}
 
-        {/* 预设模板 */}
         {activeTab === 'templates' && (
-          <div className="p-4 space-y-4">
-            {/* 收藏模板 */}
+          <div className="space-y-5 p-4">
             {favoriteTemplates.length > 0 && (
-              <div className="space-y-2">
-                <div className="flex items-center gap-2 text-sm font-medium text-muted-foreground">
-                  <Star className="h-4 w-4" />
-                  收藏模板
-                </div>
-                <div className="space-y-1">
-                  {favoriteTemplates.map((template) => (
-                    <TemplateItem
-                      key={template.id}
-                      template={template}
-                      onSelect={handleQuickSelectTemplate}
-                    />
-                  ))}
-                </div>
-              </div>
+              <TemplateSection
+                title="收藏模板"
+                icon={<Star className="h-4 w-4" />}
+                templates={favoriteTemplates}
+                onSelect={handleQuickTemplateSelect}
+              />
             )}
 
-            {/* 最近使用 */}
             {recentTemplates.length > 0 && (
-              <div className="space-y-2">
-                <div className="flex items-center gap-2 text-sm font-medium text-muted-foreground">
-                  <History className="h-4 w-4" />
-                  最近使用
-                </div>
-                <div className="space-y-1">
-                  {recentTemplates.map((template) => (
-                    <TemplateItem
-                      key={template.id}
-                      template={template}
-                      onSelect={handleQuickSelectTemplate}
-                    />
-                  ))}
-                </div>
-              </div>
+              <TemplateSection
+                title="最近使用"
+                icon={<History className="h-4 w-4" />}
+                templates={recentTemplates}
+                onSelect={handleQuickTemplateSelect}
+              />
             )}
 
-            {/* 所有模板 */}
-            <div className="space-y-2">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2 text-sm font-medium text-muted-foreground">
-                  <Lightbulb className="h-4 w-4" />
-                  所有模板
-                </div>
-              </div>
-              <div className="space-y-1">
-                {templates.map((template) => (
-                  <TemplateItem
-                    key={template.id}
-                    template={template}
-                    onSelect={handleQuickSelectTemplate}
-                  />
-                ))}
-              </div>
-            </div>
+            <TemplateSection
+              title="全部模板"
+              icon={<Lightbulb className="h-4 w-4" />}
+              templates={templates}
+              onSelect={handleQuickTemplateSelect}
+            />
           </div>
         )}
 
-        {/* 搜索历史 */}
         {activeTab === 'history' && (
-          <div className="p-4 space-y-4">
+          <div className="space-y-4 p-4">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2 text-sm font-medium text-muted-foreground">
                 <History className="h-4 w-4" />
                 搜索历史
               </div>
               {searchHistory.length > 0 && (
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  className="h-7 text-xs text-muted-foreground"
-                  onClick={clearSearchHistory}
-                >
-                  清除历史
+                <Button variant="ghost" size="sm" onClick={clearSearchHistory}>
+                  清空历史
                 </Button>
               )}
             </div>
 
             {searchHistory.length === 0 ? (
-              <div className="text-center py-8 text-muted-foreground text-sm">
-                暂无搜索历史
-              </div>
+              <div className="py-10 text-center text-sm text-muted-foreground">暂无搜索历史</div>
             ) : (
-              <div className="space-y-1">
+              <div className="space-y-2">
                 {searchHistory.map((item) => (
-                  <div
+                  <button
                     key={item.id}
-                    className="flex items-center justify-between p-2 rounded-lg hover:bg-accent cursor-pointer"
+                    type="button"
+                    className="flex w-full items-center justify-between rounded-lg border p-3 text-left hover:bg-accent/50"
                     onClick={() => {
-                      useSearchStore.getState().setQuery(item.query)
+                      setQuery(item.query)
                       setActiveTab('results')
                     }}
                   >
@@ -349,10 +211,8 @@ export function SearchPanel({
                       <History className="h-4 w-4 text-muted-foreground" />
                       <span className="text-sm">{item.query}</span>
                     </div>
-                    <span className="text-xs text-muted-foreground">
-                      {item.resultCount} 结果
-                    </span>
-                  </div>
+                    <span className="text-xs text-muted-foreground">{item.resultCount} 个结果</span>
+                  </button>
                 ))}
               </div>
             )}
@@ -363,27 +223,24 @@ export function SearchPanel({
   )
 }
 
-// ============================================================================
-// 辅助组件: TabButton
-// ============================================================================
-
-interface TabButtonProps {
+function TabButton({
+  active,
+  onClick,
+  disabled,
+  children,
+}: {
   active: boolean
   onClick: () => void
   disabled?: boolean
   children: React.ReactNode
-}
-
-function TabButton({ active, onClick, disabled, children }: TabButtonProps) {
+}) {
   return (
     <button
       type="button"
       className={cn(
-        'flex items-center px-4 py-2 text-sm border-b-2 transition-colors',
-        active
-          ? 'border-primary text-primary'
-          : 'border-transparent text-muted-foreground hover:text-foreground',
-        disabled && 'opacity-50 cursor-not-allowed'
+        'flex items-center border-b-2 px-4 py-2 text-sm transition-colors',
+        active ? 'border-primary text-primary' : 'border-transparent text-muted-foreground hover:text-foreground',
+        disabled && 'cursor-not-allowed opacity-50'
       )}
       onClick={onClick}
       disabled={disabled}
@@ -393,52 +250,55 @@ function TabButton({ active, onClick, disabled, children }: TabButtonProps) {
   )
 }
 
-// ============================================================================
-// 辅助组件: TemplateItem
-// ============================================================================
-
-interface TemplateItemProps {
-  template: SearchTemplate
+function TemplateSection({
+  title,
+  icon,
+  templates,
+  onSelect,
+}: {
+  title: string
+  icon: React.ReactNode
+  templates: SearchTemplate[]
   onSelect: (template: SearchTemplate) => void
-}
-
-function TemplateItem({ template, onSelect }: TemplateItemProps) {
+}) {
   return (
-    <div
-      className={cn(
-        'group p-3 rounded-lg border bg-card hover:bg-accent/50 cursor-pointer transition-colors'
-      )}
-      onClick={() => onSelect(template)}
-    >
-      <div className="flex items-start gap-3">
-        <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-2 mb-1">
-            <span className="font-medium text-sm">{template.name}</span>
-            {template.isFavorite && (
-              <Star className="h-3 w-3 text-yellow-500 fill-yellow-500" />
-            )}
-          </div>
-          <p className="text-xs text-muted-foreground line-clamp-1 mb-1">
-            {template.description}
-          </p>
-          <code className="block text-xs bg-muted/50 px-2 py-0.5 rounded font-mono overflow-x-auto">
-            {template.command}
-          </code>
-        </div>
-        <div className="flex flex-wrap gap-1">
-          {template.tags.map((tag) => (
-            <Badge key={tag} variant="outline" className="text-xs h-4 px-1">
-              {TAG_LABELS[tag]}
-            </Badge>
-          ))}
-        </div>
+    <div className="space-y-2">
+      <div className="flex items-center gap-2 text-sm font-medium text-muted-foreground">
+        {icon}
+        {title}
+      </div>
+      <div className="space-y-2">
+        {templates.map((template) => (
+          <button
+            key={template.id}
+            type="button"
+            className="w-full rounded-lg border p-3 text-left transition-colors hover:bg-accent/50"
+            onClick={() => onSelect(template)}
+          >
+            <div className="flex items-start justify-between gap-3">
+              <div className="min-w-0 flex-1">
+                <div className="mb-1 flex items-center gap-2">
+                  <span className="text-sm font-medium">{template.name}</span>
+                  {template.isFavorite && <Star className="h-3.5 w-3.5 fill-yellow-500 text-yellow-500" />}
+                </div>
+                <p className="mb-2 text-xs text-muted-foreground">{template.description}</p>
+                <code className="block overflow-x-auto rounded bg-muted/50 px-2 py-1 text-xs">
+                  {template.command}
+                </code>
+              </div>
+              <div className="flex flex-wrap gap-1">
+                {template.tags.map((tag) => (
+                  <Badge key={`${template.id}-${tag}`} variant="outline" className="text-xs">
+                    {TAG_LABELS[tag]}
+                  </Badge>
+                ))}
+              </div>
+            </div>
+          </button>
+        ))}
       </div>
     </div>
   )
 }
-
-// ============================================================================
-// 导出
-// ============================================================================
 
 export default SearchPanel

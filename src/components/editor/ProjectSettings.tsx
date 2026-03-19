@@ -1,77 +1,120 @@
-/**
- * 项目设置组件
- *
- * 功能:
- * - 项目信息编辑
- * - 项目保存/加载
- * - 项目导入/导出
- * - 存储设置
- */
-
-import { useState, useCallback, useRef, useEffect } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
-  Save,
-  FolderOpen,
-  Download,
-  Upload,
-  Trash2,
-  Copy,
-  Settings,
-  Clock,
-  Database,
   AlertCircle,
   Check,
+  Clock,
+  Copy,
+  Database,
+  Download,
   FileJson,
+  FolderOpen,
+  Save,
+  Settings,
+  Trash2,
+  Upload,
 } from 'lucide-react'
-import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import {
+  Badge,
+  Button,
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  Input,
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+  Textarea,
+} from '@/components/ui'
 import { Label } from '@/components/ui/label'
 import { Switch } from '@/components/ui/switch'
-import { Badge } from '@/components/ui/badge'
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
-import {
-  useProjectStore,
-  useCurrentProject,
-  useIsDirty,
-  useProjectList,
-  useProjectSettings,
-} from '@/store/projectStore'
+import { useCurrentProject, useIsDirty, useProjectList, useProjectSettings, useProjectStore } from '@/store/projectStore'
 import { storage } from '@/utils/storage'
-import type { ProjectMeta } from '@/store/projectStore'
 
-// ============================================================================
-// 子组件
-// ============================================================================
+const VERSION_OPTIONS = ['1.21', '1.20.6', '1.20.4', '1.20.1']
 
-/** 项目信息编辑卡片 */
+function formatDate(timestamp: number) {
+  return new Intl.DateTimeFormat('zh-CN', {
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+  }).format(timestamp)
+}
+
+function formatBytes(bytes: number) {
+  if (bytes <= 0) return '0 B'
+
+  const units = ['B', 'KB', 'MB', 'GB']
+  let value = bytes
+  let unitIndex = 0
+
+  while (value >= 1024 && unitIndex < units.length - 1) {
+    value /= 1024
+    unitIndex += 1
+  }
+
+  return `${value.toFixed(value >= 10 || unitIndex === 0 ? 0 : 1)} ${units[unitIndex]}`
+}
+
 function ProjectInfoCard() {
-  const currentProject = useCurrentProject()
+  const project = useCurrentProject()
   const isDirty = useIsDirty()
-  const { updateProjectInfo, saveProject } = useProjectStore()
+  const updateProjectInfo = useProjectStore((state) => state.updateProjectInfo)
+  const saveProject = useProjectStore((state) => state.saveProject)
 
-  const [name, setName] = useState(currentProject?.name || '')
-  const [description, setDescription] = useState(currentProject?.description || '')
+  const [name, setName] = useState('')
+  const [description, setDescription] = useState('')
+  const [targetVersion, setTargetVersion] = useState('1.21')
+  const [saved, setSaved] = useState(false)
 
-  // 同步项目数据到本地状态
   useEffect(() => {
-    if (currentProject) {
-      setName(currentProject.name)
-      setDescription(currentProject.description || '')
+    if (!project) {
+      setName('')
+      setDescription('')
+      setTargetVersion('1.21')
+      return
     }
-  }, [currentProject])
 
-  const handleSaveInfo = useCallback(() => {
-    updateProjectInfo({ name, description: description || undefined })
+    setName(project.name)
+    setDescription(project.description || '')
+    setTargetVersion(project.targetVersion || '1.21')
+  }, [project])
+
+  useEffect(() => {
+    if (!saved) return
+    const timer = window.setTimeout(() => setSaved(false), 2000)
+    return () => window.clearTimeout(timer)
+  }, [saved])
+
+  const handleSave = useCallback(() => {
+    if (!project) return
+
+    updateProjectInfo({
+      name: name.trim() || '未命名项目',
+      description: description.trim() || undefined,
+      targetVersion,
+    })
     saveProject()
-  }, [name, description, updateProjectInfo, saveProject])
+    setSaved(true)
+  }, [description, name, project, saveProject, targetVersion, updateProjectInfo])
 
-  if (!currentProject) {
+  if (!project) {
     return (
       <Card>
         <CardHeader>
           <CardTitle>项目信息</CardTitle>
-          <CardDescription>当前没有打开的项目</CardDescription>
+          <CardDescription>当前还没有打开项目。</CardDescription>
         </CardHeader>
       </Card>
     )
@@ -80,383 +123,410 @@ function ProjectInfoCard() {
   return (
     <Card>
       <CardHeader>
-        <div className="flex items-center justify-between">
+        <div className="flex items-start justify-between gap-3">
           <div>
             <CardTitle>项目信息</CardTitle>
-            <CardDescription>编辑当前项目的基本信息</CardDescription>
+            <CardDescription>管理项目名称、描述和目标 Minecraft 版本。</CardDescription>
           </div>
-          {isDirty && <Badge variant="secondary">未保存</Badge>}
+          <div className="flex items-center gap-2">
+            {isDirty && <Badge variant="secondary">未保存</Badge>}
+            {saved && (
+              <Badge className="gap-1">
+                <Check className="h-3.5 w-3.5" />
+                已保存
+              </Badge>
+            )}
+          </div>
         </div>
       </CardHeader>
-      <CardContent className="space-y-4">
+      <CardContent className="space-y-5">
         <div className="space-y-2">
           <Label htmlFor="project-name">项目名称</Label>
           <Input
             id="project-name"
             value={name}
-            onChange={(e) => setName(e.target.value)}
+            onChange={(event) => setName(event.target.value)}
             placeholder="输入项目名称"
           />
         </div>
 
         <div className="space-y-2">
           <Label htmlFor="project-description">项目描述</Label>
-          <Input
+          <Textarea
             id="project-description"
             value={description}
-            onChange={(e) => setDescription(e.target.value)}
-            placeholder="输入项目描述（可选）"
+            onChange={(event) => setDescription(event.target.value)}
+            placeholder="简要说明这张工作流图要解决的问题"
           />
         </div>
 
-        <div className="text-sm text-muted-foreground">
-          <div>创建时间: {new Date(currentProject.createdAt).toLocaleString()}</div>
-          <div>更新时间: {new Date(currentProject.updatedAt).toLocaleString()}</div>
-          <div>命令方块数: {currentProject.commandBlocks.length}</div>
-          <div>数据包数: {currentProject.datapacks.length}</div>
+        <div className="space-y-2">
+          <Label htmlFor="project-version">目标版本</Label>
+          <Select value={targetVersion} onValueChange={setTargetVersion}>
+            <SelectTrigger id="project-version">
+              <SelectValue placeholder="选择版本" />
+            </SelectTrigger>
+            <SelectContent>
+              {VERSION_OPTIONS.map((version) => (
+                <SelectItem key={version} value={version}>
+                  Minecraft {version}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         </div>
 
-        <Button onClick={handleSaveInfo} disabled={!isDirty}>
-          <Save className="h-4 w-4 mr-2" />
-          保存项目
-        </Button>
+        <div className="grid gap-3 sm:grid-cols-2">
+          <div className="rounded-lg border p-3">
+            <p className="text-sm text-muted-foreground">创建时间</p>
+            <p className="mt-1 text-sm font-medium">{formatDate(project.createdAt)}</p>
+          </div>
+          <div className="rounded-lg border p-3">
+            <p className="text-sm text-muted-foreground">最后更新</p>
+            <p className="mt-1 text-sm font-medium">{formatDate(project.updatedAt)}</p>
+          </div>
+          <div className="rounded-lg border p-3">
+            <p className="text-sm text-muted-foreground">命令方块数量</p>
+            <p className="mt-1 text-sm font-medium">{project.commandBlocks.length}</p>
+          </div>
+          <div className="rounded-lg border p-3">
+            <p className="text-sm text-muted-foreground">数据包数量</p>
+            <p className="mt-1 text-sm font-medium">{project.datapacks.length}</p>
+          </div>
+        </div>
+
+        <div className="flex justify-end">
+          <Button onClick={handleSave} className="gap-2">
+            <Save className="h-4 w-4" />
+            保存项目信息
+          </Button>
+        </div>
       </CardContent>
     </Card>
   )
 }
 
-/** 项目列表卡片 */
-function ProjectListCard({
-  onSelectProject,
-}: {
-  onSelectProject: (id: string) => void
-}) {
+function ProjectListCard() {
+  const currentProject = useCurrentProject()
   const projectList = useProjectList()
-  const { loadProject, deleteProject, duplicateProject, currentProject } = useProjectStore()
-  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
-  const [projectToDelete, setProjectToDelete] = useState<ProjectMeta | null>(null)
+  const getProjectList = useProjectStore((state) => state.getProjectList)
+  const loadProject = useProjectStore((state) => state.loadProject)
+  const duplicateProject = useProjectStore((state) => state.duplicateProject)
+  const deleteProject = useProjectStore((state) => state.deleteProject)
+  const refreshProjectList = useProjectStore((state) => state.refreshProjectList)
 
-  const handleDelete = useCallback(() => {
-    if (projectToDelete) {
-      deleteProject(projectToDelete.id)
-      setDeleteDialogOpen(false)
-      setProjectToDelete(null)
-    }
-  }, [projectToDelete, deleteProject])
+  const [deleteId, setDeleteId] = useState<string | null>(null)
 
-  const confirmDelete = useCallback((project: ProjectMeta) => {
-    setProjectToDelete(project)
-    setDeleteDialogOpen(true)
-  }, [])
+  useEffect(() => {
+    refreshProjectList()
+  }, [refreshProjectList])
 
-  const handleDuplicate = useCallback(
-    (id: string) => {
-      const newProject = duplicateProject(id)
-      if (newProject) {
-        loadProject(newProject.id)
-      }
-    },
-    [duplicateProject, loadProject]
-  )
+  const items = useMemo(() => getProjectList(), [getProjectList, projectList])
 
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle>项目列表</CardTitle>
-        <CardDescription>管理和切换已保存的项目</CardDescription>
-      </CardHeader>
-      <CardContent>
-        {projectList.length === 0 ? (
-          <div className="text-center text-muted-foreground py-8">
-            暂无保存的项目
-          </div>
-        ) : (
-          <div className="space-y-2">
-            {projectList.map((project) => (
-              <div
-                key={project.id}
-                className={`flex items-center justify-between p-3 rounded-lg border ${
-                  currentProject?.id === project.id
-                    ? 'bg-accent border-primary'
-                    : 'hover:bg-accent/50'
-                }`}
-              >
-                <div
-                  className="flex-1 cursor-pointer"
-                  onClick={() => loadProject(project.id)}
-                >
-                  <div className="font-medium">{project.name}</div>
-                  <div className="text-xs text-muted-foreground">
-                    更新于 {new Date(project.updatedAt).toLocaleDateString()}
+    <>
+      <Card>
+        <CardHeader>
+          <CardTitle>项目列表</CardTitle>
+          <CardDescription>切换、复制或删除本地项目。</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          {items.length === 0 ? (
+            <div className="rounded-lg border border-dashed p-4 text-sm text-muted-foreground">
+              还没有可用项目，先创建一个项目再继续。
+            </div>
+          ) : (
+            items.map((item) => {
+              const isCurrent = item.id === currentProject?.id
+
+              return (
+                <div key={item.id} className="rounded-lg border p-4">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="space-y-1">
+                      <div className="flex items-center gap-2">
+                        <p className="font-medium">{item.name}</p>
+                        {isCurrent && <Badge>当前项目</Badge>}
+                      </div>
+                      {item.description && (
+                        <p className="text-sm text-muted-foreground">{item.description}</p>
+                      )}
+                      <div className="flex flex-wrap gap-3 text-xs text-muted-foreground">
+                        <span>命令方块 {item.commandBlockCount}</span>
+                        <span>数据包 {item.datapackCount}</span>
+                        <span>更新于 {formatDate(item.updatedAt)}</span>
+                      </div>
+                    </div>
+                    <div className="flex flex-wrap justify-end gap-2">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => loadProject(item.id)}
+                        className="gap-1"
+                      >
+                        <FolderOpen className="h-3.5 w-3.5" />
+                        打开
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => duplicateProject(item.id)}
+                        className="gap-1"
+                      >
+                        <Copy className="h-3.5 w-3.5" />
+                        复制
+                      </Button>
+                      <Button
+                        variant="destructive"
+                        size="sm"
+                        onClick={() => setDeleteId(item.id)}
+                        className="gap-1"
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                        删除
+                      </Button>
+                    </div>
                   </div>
                 </div>
-                <div className="flex items-center gap-1">
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    onClick={() => handleDuplicate(project.id)}
-                    title="复制项目"
-                  >
-                    <Copy className="h-4 w-4" />
-                  </Button>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    onClick={() => confirmDelete(project)}
-                    title="删除项目"
-                  >
-                    <Trash2 className="h-4 w-4" />
-                  </Button>
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
+              )
+            })
+          )}
+        </CardContent>
+      </Card>
 
-        {/* 删除确认对话框 */}
-        <Dialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
-          <DialogContent>
-            <DialogHeader>
-              <DialogTitle>确认删除</DialogTitle>
-              <DialogDescription>
-                确定要删除项目 "{projectToDelete?.name}" 吗？此操作无法撤销。
-              </DialogDescription>
-            </DialogHeader>
-            <DialogFooter>
-              <Button variant="outline" onClick={() => setDeleteDialogOpen(false)}>
-                取消
-              </Button>
-              <Button variant="destructive" onClick={handleDelete}>
-                删除
-              </Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
-      </CardContent>
-    </Card>
+      <Dialog open={Boolean(deleteId)} onOpenChange={(open) => !open && setDeleteId(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>确认删除项目</DialogTitle>
+            <DialogDescription>
+              删除后无法恢复，本地保存的工作流与数据包配置也会一并移除。
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDeleteId(null)}>
+              取消
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={() => {
+                if (deleteId) {
+                  deleteProject(deleteId)
+                  setDeleteId(null)
+                }
+              }}
+            >
+              确认删除
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </>
   )
 }
 
-/** 存储设置卡片 */
 function StorageSettingsCard() {
-  const settings = useProjectSettings()
-  const { setAutoSave, setAutoSaveInterval, setStoragePrefix } = useProjectStore()
-  const [prefix, setPrefix] = useState(settings.storagePrefix)
-  const [saveStatus, setSaveStatus] = useState<'idle' | 'saved' | 'error'>('idle')
+  const { autoSave, autoSaveInterval, storagePrefix } = useProjectSettings()
+  const setAutoSave = useProjectStore((state) => state.setAutoSave)
+  const setAutoSaveInterval = useProjectStore((state) => state.setAutoSaveInterval)
+  const setStoragePrefix = useProjectStore((state) => state.setStoragePrefix)
 
-  const handleSavePrefix = useCallback(() => {
-    setStoragePrefix(prefix)
-    setSaveStatus('saved')
-    setTimeout(() => setSaveStatus('idle'), 2000)
-  }, [prefix, setStoragePrefix])
+  const [prefixInput, setPrefixInput] = useState(storagePrefix)
+
+  useEffect(() => {
+    setPrefixInput(storagePrefix)
+  }, [storagePrefix])
 
   return (
     <Card>
       <CardHeader>
         <CardTitle className="flex items-center gap-2">
-          <Database className="h-5 w-5" />
+          <Settings className="h-5 w-5" />
           存储设置
         </CardTitle>
-        <CardDescription>配置项目的存储方式</CardDescription>
+        <CardDescription>管理自动保存、本地存储前缀和空间占用。</CardDescription>
       </CardHeader>
-      <CardContent className="space-y-4">
-        <div className="flex items-center justify-between">
-          <div className="space-y-0.5">
-            <Label>自动保存</Label>
-            <p className="text-sm text-muted-foreground">
-              自动保存项目更改
-            </p>
-          </div>
-          <Switch checked={settings.autoSave} onCheckedChange={setAutoSave} />
-        </div>
-
-        {settings.autoSave && (
-          <div className="space-y-2">
-            <Label className="flex items-center gap-2">
+      <CardContent className="space-y-5">
+        <div className="flex items-center justify-between rounded-lg border p-4">
+          <div className="space-y-1">
+            <div className="flex items-center gap-2 font-medium">
               <Clock className="h-4 w-4" />
-              自动保存间隔（秒）
-            </Label>
-            <Input
-              type="number"
-              value={settings.autoSaveInterval / 1000}
-              onChange={(e) => setAutoSaveInterval(Number(e.target.value) * 1000)}
-              min={10}
-              max={300}
-            />
+              自动保存
+            </div>
+            <p className="text-sm text-muted-foreground">开启后会按设定间隔自动保存当前项目。</p>
           </div>
-        )}
+          <Switch checked={autoSave} onCheckedChange={setAutoSave} />
+        </div>
 
         <div className="space-y-2">
-          <Label>存储键前缀</Label>
-          <div className="flex gap-2">
-            <Input
-              value={prefix}
-              onChange={(e) => setPrefix(e.target.value)}
-              placeholder="mc-editor"
-            />
-            <Button onClick={handleSavePrefix}>
-              {saveStatus === 'saved' ? (
-                <Check className="h-4 w-4" />
-              ) : (
-                '保存'
-              )}
-            </Button>
-          </div>
-          <p className="text-xs text-muted-foreground">
-            用于区分不同应用的数据存储
-          </p>
+          <Label htmlFor="autosave-interval">自动保存间隔（毫秒）</Label>
+          <Input
+            id="autosave-interval"
+            type="number"
+            min={5000}
+            step={1000}
+            value={autoSaveInterval}
+            onChange={(event) => setAutoSaveInterval(Number(event.target.value) || 30000)}
+          />
         </div>
 
-        <div className="text-sm text-muted-foreground">
-          <div>已用存储空间: {(storage.getUsedSize() / 1024).toFixed(2)} KB</div>
-          <div>可用存储空间: {(storage.getAvailableSize() / 1024 / 1024).toFixed(2)} MB</div>
+        <div className="space-y-2">
+          <Label htmlFor="storage-prefix">存储前缀</Label>
+          <div className="flex gap-2">
+            <Input
+              id="storage-prefix"
+              value={prefixInput}
+              onChange={(event) => setPrefixInput(event.target.value)}
+              placeholder="mc-editor"
+            />
+            <Button
+              variant="outline"
+              onClick={() => setStoragePrefix(prefixInput.trim() || 'mc-editor')}
+            >
+              应用
+            </Button>
+          </div>
+        </div>
+
+        <div className="grid gap-3 sm:grid-cols-2">
+          <div className="rounded-lg border p-4">
+            <div className="flex items-center gap-2 text-sm text-muted-foreground">
+              <Database className="h-4 w-4" />
+              已用空间
+            </div>
+            <p className="mt-2 text-lg font-semibold">{formatBytes(storage.getUsedSize())}</p>
+          </div>
+          <div className="rounded-lg border p-4">
+            <div className="flex items-center gap-2 text-sm text-muted-foreground">
+              <Database className="h-4 w-4" />
+              剩余空间
+            </div>
+            <p className="mt-2 text-lg font-semibold">{formatBytes(storage.getAvailableSize())}</p>
+          </div>
         </div>
       </CardContent>
     </Card>
   )
 }
 
-/** 导入导出卡片 */
 function ImportExportCard() {
-  const { exportProject, importProject, createProject, loadProject } = useProjectStore()
-  const fileInputRef = useRef<HTMLInputElement>(null)
-  const [importStatus, setImportStatus] = useState<{
-    type: 'success' | 'error' | null
-    message: string
-  }>({ type: null, message: '' })
+  const currentProject = useCurrentProject()
+  const createProject = useProjectStore((state) => state.createProject)
+  const exportProject = useProjectStore((state) => state.exportProject)
+  const importProject = useProjectStore((state) => state.importProject)
+
+  const fileInputRef = useRef<HTMLInputElement | null>(null)
+  const [status, setStatus] = useState<{ type: 'success' | 'error'; message: string } | null>(null)
 
   const handleExport = useCallback(() => {
+    if (!currentProject) return
+
     const json = exportProject()
-    if (json) {
-      const blob = new Blob([json], { type: 'application/json' })
-      const url = URL.createObjectURL(blob)
-      const link = document.createElement('a')
-      link.href = url
-      link.download = `project_${Date.now()}.json`
-      document.body.appendChild(link)
-      link.click()
-      document.body.removeChild(link)
-      URL.revokeObjectURL(url)
+    if (!json) {
+      setStatus({ type: 'error', message: '当前没有可导出的项目。' })
+      return
     }
-  }, [exportProject])
 
-  const handleImport = useCallback(
-    async (event: React.ChangeEvent<HTMLInputElement>) => {
-      const file = event.target.files?.[0]
-      if (!file) return
+    storage.downloadFile(JSON.parse(json), `${currentProject.name || 'project'}.json`)
+    setStatus({ type: 'success', message: '项目导出成功。' })
+  }, [currentProject, exportProject])
 
-      try {
-        const text = await file.text()
-        const result = importProject(text)
+  const handleImport = useCallback(async (file: File) => {
+    try {
+      const content = await storage.readFile(file)
+      const result = importProject(content)
 
-        if (result.success) {
-          setImportStatus({ type: 'success', message: '项目导入成功' })
-          if (result.project) {
-            loadProject(result.project.id)
-          }
-        } else {
-          setImportStatus({ type: 'error', message: result.error || '导入失败' })
-        }
-      } catch (e) {
-        setImportStatus({ type: 'error', message: `导入失败: ${String(e)}` })
+      if (result.success) {
+        setStatus({ type: 'success', message: `已导入项目：${result.project?.name || '未命名项目'}` })
+        return
       }
 
-      // 清空文件输入
-      if (fileInputRef.current) {
-        fileInputRef.current.value = ''
-      }
-
-      // 3秒后清除状态
-      setTimeout(() => setImportStatus({ type: null, message: '' }), 3000)
-    },
-    [importProject, loadProject]
-  )
-
-  const handleCreateNew = useCallback(() => {
-    const project = createProject('新建项目')
-    loadProject(project.id)
-  }, [createProject, loadProject])
+      setStatus({ type: 'error', message: result.error || '项目导入失败。' })
+    } catch (error) {
+      setStatus({ type: 'error', message: `读取文件失败：${String(error)}` })
+    }
+  }, [importProject])
 
   return (
     <Card>
       <CardHeader>
         <CardTitle className="flex items-center gap-2">
           <FileJson className="h-5 w-5" />
-          导入/导出
+          导入与导出
         </CardTitle>
-        <CardDescription>导入或导出项目配置文件</CardDescription>
+        <CardDescription>创建新项目，或在本地导入导出 JSON 文件。</CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
-        <div className="grid grid-cols-2 gap-2">
-          <Button onClick={handleCreateNew} variant="outline">
-            <FolderOpen className="h-4 w-4 mr-2" />
-            新建项目
-          </Button>
-          <Button onClick={handleExport} variant="outline">
-            <Download className="h-4 w-4 mr-2" />
-            导出项目
-          </Button>
-        </div>
+        {status && (
+          <div
+            className={`flex items-start gap-2 rounded-lg border p-3 text-sm ${
+              status.type === 'success'
+                ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-700'
+                : 'border-destructive/30 bg-destructive/10 text-destructive'
+            }`}
+          >
+            {status.type === 'success' ? (
+              <Check className="mt-0.5 h-4 w-4 shrink-0" />
+            ) : (
+              <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
+            )}
+            <span>{status.message}</span>
+          </div>
+        )}
 
-        <div>
-          <input
-            ref={fileInputRef}
-            type="file"
-            accept=".json"
-            onChange={handleImport}
-            className="hidden"
-          />
+        <div className="grid gap-3 sm:grid-cols-3">
           <Button
             variant="outline"
-            className="w-full"
+            className="gap-2"
+            onClick={() => createProject('未命名项目', '新的可视化指令工作流项目')}
+          >
+            <FolderOpen className="h-4 w-4" />
+            新建项目
+          </Button>
+          <Button
+            variant="outline"
+            className="gap-2"
+            onClick={handleExport}
+            disabled={!currentProject}
+          >
+            <Download className="h-4 w-4" />
+            导出项目
+          </Button>
+          <Button
+            variant="outline"
+            className="gap-2"
             onClick={() => fileInputRef.current?.click()}
           >
-            <Upload className="h-4 w-4 mr-2" />
+            <Upload className="h-4 w-4" />
             导入项目
           </Button>
         </div>
-
-        {importStatus.type && (
-          <div
-            className={`flex items-center gap-2 text-sm ${
-              importStatus.type === 'success' ? 'text-green-600' : 'text-red-600'
-            }`}
-          >
-            {importStatus.type === 'success' ? (
-              <Check className="h-4 w-4" />
-            ) : (
-              <AlertCircle className="h-4 w-4" />
-            )}
-            {importStatus.message}
-          </div>
-        )}
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept="application/json,.json"
+          className="hidden"
+          onChange={async (event) => {
+            const file = event.target.files?.[0]
+            if (file) {
+              await handleImport(file)
+              event.target.value = ''
+            }
+          }}
+        />
       </CardContent>
     </Card>
   )
 }
 
-// ============================================================================
-// 主组件
-// ============================================================================
-
 export function ProjectSettings() {
   return (
-    <div className="space-y-6 p-4">
-      <div className="flex items-center gap-2">
-        <Settings className="h-6 w-6" />
-        <h2 className="text-2xl font-bold">项目设置</h2>
+    <div className="grid gap-6 xl:grid-cols-[1.2fr_0.8fr]">
+      <div className="space-y-6">
+        <ProjectInfoCard />
+        <ProjectListCard />
       </div>
-
-      <div className="grid gap-6 md:grid-cols-2">
-        <div className="space-y-6">
-          <ProjectInfoCard />
-          <StorageSettingsCard />
-        </div>
-
-        <div className="space-y-6">
-          <ImportExportCard />
-          <ProjectListCard onSelectProject={() => {}} />
-        </div>
+      <div className="space-y-6">
+        <StorageSettingsCard />
+        <ImportExportCard />
       </div>
     </div>
   )

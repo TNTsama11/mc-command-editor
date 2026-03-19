@@ -1,84 +1,144 @@
-/**
- * E2E 测试 - 命令编辑器功能
- */
+import { expect, test, type Page } from '@playwright/test'
 
-import { test, expect } from '@playwright/test'
+async function ensureNodePanelVisible(page: Page) {
+  if ((page.viewportSize()?.width ?? 0) >= 768) {
+    return 'desktop' as const
+  }
 
-test.describe('命令编辑器', () => {
+  const expandButton = page.getByTitle('展开面板')
+  if (await expandButton.isVisible()) {
+    await expandButton.click()
+    return 'mobile' as const
+  }
+
+  return 'desktop' as const
+}
+
+function getNodePanel(page: Page, mode: 'desktop' | 'mobile') {
+  const containerTestId =
+    mode === 'mobile' ? 'mobile-node-panel-container' : 'desktop-node-panel-container'
+
+  return page.getByTestId(containerTestId).getByTestId('node-panel')
+}
+
+test.describe('节点编辑器', () => {
   test.beforeEach(async ({ page }) => {
     await page.goto('/')
   })
 
-  test('应该能够新建命令', async ({ page }) => {
-    // 点击新建命令按钮
-    await page.getByRole('button', { name: '新建命令' }).click()
+  test('点击开始创建后应该进入节点工作台并显示节点分组', async ({ page }) => {
+    test.skip((page.viewportSize()?.width ?? 0) < 768, '移动端节点抽屉交互单独验证')
 
-    // 验证进入编辑模式（如果有相应的 UI 变化）
-    // 这里需要根据实际 UI 实现
+    await page.getByRole('button', { name: '开始创建' }).click()
+    const panelMode = await ensureNodePanelVisible(page)
+    const nodePanel = getNodePanel(page, panelMode)
+
+    await expect(nodePanel.getByRole('heading', { name: '高频推荐' })).toBeVisible()
+    await expect(nodePanel.getByRole('heading', { name: '基础命令' })).toBeVisible()
+    await expect(nodePanel.getByRole('heading', { name: '方块与世界' })).toBeVisible()
+    await expect(nodePanel.getByRole('heading', { name: '条件与执行' })).toBeVisible()
+    await expect(nodePanel.getByRole('heading', { name: '常量与输入' })).toBeVisible()
+
+    await expect(nodePanel.getByText(/^Give$/)).toBeVisible()
+    await expect(nodePanel.getByText(/^Summon$/)).toBeVisible()
+    await expect(nodePanel.getByText(/^Teleport$/)).toBeVisible()
+    await expect(nodePanel.getByText(/^Setblock$/)).toBeVisible()
+    await expect(nodePanel.getByText(/^Fill$/)).toBeVisible()
+    await expect(nodePanel.getByText(/^Effect$/)).toBeVisible()
+    await expect(nodePanel.getByText(/^Execute$/)).toBeVisible()
   })
 
-  test('应该能够选择命令类型', async ({ page }) => {
-    // 假设有命令类型选择器
-    const commandSelector = page.locator('[data-testid="command-type-selector"]')
+  test('搜索应该同时兼容命令 ID、标签和说明', async ({ page }) => {
+    test.skip((page.viewportSize()?.width ?? 0) < 768, '移动端节点抽屉交互单独验证')
 
-    if (await commandSelector.isVisible()) {
-      await commandSelector.click()
+    await page.getByRole('button', { name: '开始创建' }).click()
+    const panelMode = await ensureNodePanelVisible(page)
+    const nodePanel = getNodePanel(page, panelMode)
+    const searchInput = nodePanel.getByTestId('node-search-input')
 
-      // 选择 give 命令
-      await page.getByRole('option', { name: /give/i }).click()
-    }
+    await searchInput.fill('give')
+    await expect(nodePanel.getByText(/^Give$/)).toBeVisible()
+
+    await searchInput.fill('召唤')
+    await expect(nodePanel.getByText(/^Summon$/)).toBeVisible()
+
+    await searchInput.fill('方块')
+    await expect(nodePanel.getByText(/^Setblock$/)).toBeVisible()
   })
 
-  test('应该能够输入命令参数', async ({ page }) => {
-    // 假设有参数输入区域
-    const paramInput = page.locator('[data-testid="param-input"]').first()
+  test('最近使用入口应该回到经典命令编辑器', async ({ page }) => {
+    test.skip((page.viewportSize()?.width ?? 0) < 768, '移动端经典编辑器入口单独验证')
 
-    if (await paramInput.isVisible()) {
-      await paramInput.fill('@p')
-      await expect(paramInput).toHaveValue('@p')
-    }
+    await page.getByRole('button', { name: '开始创建' }).click()
+    await page.getByRole('button', { name: /返回首页/ }).click()
+    await page.getByText('/give @p diamond 64').click()
+
+    await expect(page.getByText('命令类型', { exact: true })).toBeVisible()
+    await expect(page.getByRole('combobox')).toBeVisible()
+    await expect(page.getByText('请先选择命令类型')).toBeVisible()
   })
 
-  test('应该能够预览生成的命令', async ({ page }) => {
-    // 检查命令预览区域
-    const previewArea = page.locator('[data-testid="command-preview"]')
+  test('选中节点后参数面板应显示常用参数、高级参数和输入来源', async ({ page }) => {
+    test.skip((page.viewportSize()?.width ?? 0) < 768, '移动端参数面板暂不纳入主线回归')
 
-    if (await previewArea.isVisible()) {
-      // 验证预览区域存在
-      await expect(previewArea).toBeVisible()
-    }
+    await page.getByRole('button', { name: '开始创建' }).click()
+    const panelMode = await ensureNodePanelVisible(page)
+    const nodePanel = getNodePanel(page, panelMode)
+
+    await nodePanel.getByText(/^Give$/).first().dblclick()
+    await page.getByTestId('flow-node-give').click()
+
+    const configPanel = page
+      .getByTestId('desktop-node-config-container')
+      .getByTestId('node-config-panel')
+    await expect(configPanel).toBeVisible()
+    await expect(configPanel.getByTestId('config-common-section')).toBeVisible()
+    await expect(configPanel.getByTestId('config-advanced-section')).toBeVisible()
+    await expect(configPanel.getByTestId('config-source-section')).toBeVisible()
+    await expect(configPanel.getByTestId('config-field-target')).toBeVisible()
+    await expect(configPanel.getByTestId('config-field-item')).toBeVisible()
   })
 
-  test('应该能够复制命令', async ({ page }) => {
-    // 假设有复制按钮
-    const copyButton = page.getByRole('button', { name: /复制/i })
+  test('资源字段应显示候选资源，并支持点击回填', async ({ page }) => {
+    test.skip((page.viewportSize()?.width ?? 0) < 768, '移动端资源选择暂不纳入主线回归')
 
-    if (await copyButton.isVisible()) {
-      // 点击复制
-      await copyButton.click()
+    await page.getByRole('button', { name: '开始创建' }).click()
+    const panelMode = await ensureNodePanelVisible(page)
+    const nodePanel = getNodePanel(page, panelMode)
 
-      // 验证复制成功提示（如果有）
-      await expect(page.getByText(/已复制/i)).toBeVisible()
-    }
-  })
-})
+    await nodePanel.getByText(/^Give$/).first().dblclick()
+    await page.getByTestId('flow-node-give').click()
 
-test.describe('命令历史', () => {
-  test('应该显示最近使用的命令', async ({ page }) => {
-    await page.goto('/')
+    const configPanel = page
+      .getByTestId('desktop-node-config-container')
+      .getByTestId('node-config-panel')
+    const itemField = configPanel.getByTestId('config-field-item')
 
-    // 检查最近使用区域
-    await expect(page.getByText('最近使用')).toBeVisible()
+    await expect(itemField.getByTestId('resource-suggestions-item')).toBeVisible()
+    await itemField.getByTestId('resource-option-item-minecraft-diamond').click()
+    await expect(itemField.locator('input')).toHaveValue('minecraft:diamond')
   })
 
-  test('历史记录应该可以点击', async ({ page }) => {
-    await page.goto('/')
+  test('问题列表应展示工作流检查结果，并支持点击后定位节点', async ({ page }) => {
+    test.skip((page.viewportSize()?.width ?? 0) < 768, '移动端问题列表暂不纳入主线回归')
 
-    // 找到历史记录项
-    const historyItems = page.locator('[data-testid="command-history-item"]')
+    await page.getByRole('button', { name: '开始创建' }).click()
+    const panelMode = await ensureNodePanelVisible(page)
+    const nodePanel = getNodePanel(page, panelMode)
 
-    if (await historyItems.first().isVisible()) {
-      await historyItems.first().click()
-    }
+    await nodePanel.getByText(/^Give$/).first().dblclick()
+
+    const issuePanel = page.getByTestId('workflow-issue-panel')
+    await expect(issuePanel).toBeVisible()
+    const firstIssue = issuePanel.locator('button').first()
+    await expect(firstIssue).toBeVisible()
+
+    await firstIssue.click()
+
+    const configPanel = page
+      .getByTestId('desktop-node-config-container')
+      .getByTestId('node-config-panel')
+    await expect(configPanel).toBeVisible()
+    await expect(configPanel.getByText('Give')).toBeVisible()
   })
 })

@@ -19,6 +19,8 @@ const buttonVariants = cva(
         ghost: "hover:bg-accent hover:text-accent-foreground",
         link: "text-primary underline-offset-4 hover:underline",
         mc: "bg-mc-command text-white hover:bg-mc-command/90",
+        // Minecraft 像素风格按钮
+        pixel: "rounded-none border-2 border-[var(--mc-border)] bg-[var(--mc-bg-dark)] text-[var(--mc-text)] hover:brightness-110 active:brightness-90 font-minecraft",
       },
       size: {
         default: "h-10 px-4 py-2",

@@ -1,24 +1,17 @@
-/**
- * 项目状态管理 Store
- *
- * 功能:
- * - 项目创建/加载/保存
- * - 多项目管理
- * - 自动保存支持
- * - 项目导入/导出
- * - 自定义存储键
- */
-
 import { create } from 'zustand'
-import { persist, createJSONStorage } from 'zustand/middleware'
-import { Project, CommandBlock, Datapack } from '@/types'
-import { storage, StorageConfig } from '@/utils/storage'
+import { createJSONStorage, persist } from 'zustand/middleware'
 
-// ============================================================================
-// 类型定义
-// ============================================================================
+import { deserializeProjectDocument, serializeProjectDocument } from '@/core/workflow/projectSerializer'
+import { createEmptyWorkflowDocument } from '@/core/workflow/types'
+import type { CommandBlock, Datapack, Project } from '@/types'
+import { type StorageConfig, storage } from '@/utils/storage'
 
-/** 项目元数据 */
+const PROJECT_STORE_NAME = 'mc-editor-project-store'
+const DEFAULT_STORAGE_PREFIX = 'mc-editor'
+const DEFAULT_TARGET_VERSION = '1.21'
+const DEFAULT_AUTO_SAVE_INTERVAL = 30000
+const MAIN_WORKFLOW_ID = 'main'
+
 export interface ProjectMeta {
   id: string
   name: string
@@ -27,124 +20,62 @@ export interface ProjectMeta {
   updatedAt: number
 }
 
-/** 项目列表项 */
 export interface ProjectListItem extends ProjectMeta {
   commandBlockCount: number
   datapackCount: number
 }
 
-/** 项目状态 */
+interface ProjectImportResult {
+  success: boolean
+  project?: Project
+  error?: string
+}
+
 interface ProjectState {
-  // 当前项目
   currentProject: Project | null
   isDirty: boolean
-
-  // 项目列表
   projectList: ProjectMeta[]
-
-  // 设置
   autoSave: boolean
   autoSaveInterval: number
   storagePrefix: string
 
-  // ===== 项目操作 =====
-
-  /** 创建新项目 */
   createProject: (name: string, description?: string) => Project
-
-  /** 加载项目 */
   loadProject: (id: string) => boolean
-
-  /** 保存当前项目 */
   saveProject: () => boolean
-
-  /** 关闭当前项目 */
   closeProject: () => void
-
-  /** 删除项目 */
   deleteProject: (id: string) => boolean
-
-  /** 复制项目 */
   duplicateProject: (id: string) => Project | null
 
-  // ===== 项目数据操作 =====
-
-  /** 更新项目信息 */
-  updateProjectInfo: (updates: Partial<Pick<Project, 'name' | 'description'>>) => void
-
-  /** 添加命令方块 */
+  updateProjectInfo: (
+    updates: Partial<Pick<Project, 'name' | 'description' | 'targetVersion'>>
+  ) => void
   addCommandBlock: (block: CommandBlock) => void
-
-  /** 更新命令方块 */
   updateCommandBlock: (id: string, updates: Partial<CommandBlock>) => void
-
-  /** 删除命令方块 */
   removeCommandBlock: (id: string) => void
-
-  /** 重新排序命令方块 */
   reorderCommandBlocks: (startIndex: number, endIndex: number) => void
-
-  /** 批量更新命令方块 */
   setCommandBlocks: (blocks: CommandBlock[]) => void
-
-  /** 添加数据包 */
   addDatapack: (datapack: Datapack) => void
-
-  /** 更新数据包 */
   updateDatapack: (id: string, updates: Partial<Datapack>) => void
-
-  /** 删除数据包 */
   removeDatapack: (id: string) => void
 
-  // ===== 设置操作 =====
-
-  /** 设置自动保存 */
   setAutoSave: (enabled: boolean) => void
-
-  /** 设置自动保存间隔 */
   setAutoSaveInterval: (interval: number) => void
-
-  /** 设置存储前缀 */
   setStoragePrefix: (prefix: string) => void
 
-  // ===== 查询操作 =====
-
-  /** 获取项目列表 */
   getProjectList: () => ProjectListItem[]
-
-  /** 根据 ID 获取项目 */
   getProjectById: (id: string) => Project | null
-
-  // ===== 导入/导出 =====
-
-  /** 导出当前项目为 JSON */
   exportProject: () => string | null
+  importProject: (json: string) => ProjectImportResult
 
-  /** 导入项目 */
-  importProject: (json: string) => { success: boolean; project?: Project; error?: string }
-
-  // ===== 工具操作 =====
-
-  /** 标记项目已修改 */
   markDirty: () => void
-
-  /** 标记项目未修改 */
   markClean: () => void
-
-  /** 刷新项目列表 */
   refreshProjectList: () => void
 }
 
-// ============================================================================
-// 辅助函数
-// ============================================================================
-
-/** 生成唯一ID */
-function generateId(): string {
-  return `proj_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`
+function generateProjectId() {
+  return `proj_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`
 }
 
-/** 获取存储配置 */
 function getStorageConfig(prefix: string): StorageConfig {
   return {
     prefix,
@@ -152,22 +83,69 @@ function getStorageConfig(prefix: string): StorageConfig {
   }
 }
 
-/** 创建空项目 */
+function getProjectStorageKey(id: string) {
+  return `project:${id}`
+}
+
+function buildProjectMeta(project: Project): ProjectMeta {
+  return {
+    id: project.id,
+    name: project.name,
+    description: project.description,
+    createdAt: project.createdAt,
+    updatedAt: project.updatedAt,
+  }
+}
+
 function createEmptyProject(name: string, description?: string): Project {
   const now = Date.now()
+
   return {
-    id: generateId(),
+    id: generateProjectId(),
     name,
     description,
+    targetVersion: DEFAULT_TARGET_VERSION,
     createdAt: now,
     updatedAt: now,
+    mainWorkflowId: MAIN_WORKFLOW_ID,
+    workflows: {
+      [MAIN_WORKFLOW_ID]: createEmptyWorkflowDocument(MAIN_WORKFLOW_ID),
+    },
     commandBlocks: [],
     datapacks: [],
   }
 }
 
-/** 项目元数据转列表项 */
-function metaToListItem(meta: ProjectMeta, project: Project | null): ProjectListItem {
+function ensureProjectWorkflowModel(project: Project): Project {
+  const mainWorkflowId = project.mainWorkflowId || MAIN_WORKFLOW_ID
+  const hasWorkflows = Boolean(project.workflows && Object.keys(project.workflows).length > 0)
+
+  return {
+    ...project,
+    targetVersion: project.targetVersion || DEFAULT_TARGET_VERSION,
+    mainWorkflowId,
+    workflows: hasWorkflows
+      ? project.workflows
+      : {
+          [mainWorkflowId]: createEmptyWorkflowDocument(mainWorkflowId),
+        },
+  }
+}
+
+function readProjectFromStorage(id: string, prefix: string) {
+  const result = storage.load<Project>(getProjectStorageKey(id), getStorageConfig(prefix))
+  if (!result.success || !result.data) {
+    return null
+  }
+
+  return ensureProjectWorkflowModel(result.data)
+}
+
+function writeProjectToStorage(project: Project, prefix: string) {
+  return storage.save(getProjectStorageKey(project.id), project, getStorageConfig(prefix))
+}
+
+function toProjectListItem(meta: ProjectMeta, project: Project | null): ProjectListItem {
   return {
     ...meta,
     commandBlockCount: project?.commandBlocks.length ?? 0,
@@ -175,113 +153,95 @@ function metaToListItem(meta: ProjectMeta, project: Project | null): ProjectList
   }
 }
 
-// ============================================================================
-// 项目 Store
-// ============================================================================
+function parseImportedProject(json: string): Project {
+  try {
+    return ensureProjectWorkflowModel(deserializeProjectDocument(json))
+  } catch {
+    const legacy = JSON.parse(json) as { data?: Project; project?: Project }
+    const rawProject = legacy.project || legacy.data
+    if (!rawProject) {
+      throw new Error('导入文件格式无效。')
+    }
+
+    return ensureProjectWorkflowModel(rawProject)
+  }
+}
 
 export const useProjectStore = create<ProjectState>()(
   persist(
     (set, get) => ({
-      // 初始状态
       currentProject: null,
       isDirty: false,
       projectList: [],
       autoSave: true,
-      autoSaveInterval: 30000, // 30秒
-      storagePrefix: 'mc-editor',
-
-      // ===== 项目操作 =====
+      autoSaveInterval: DEFAULT_AUTO_SAVE_INTERVAL,
+      storagePrefix: DEFAULT_STORAGE_PREFIX,
 
       createProject: (name, description) => {
         const project = createEmptyProject(name, description)
-        const meta: ProjectMeta = {
-          id: project.id,
-          name: project.name,
-          description: project.description,
-          createdAt: project.createdAt,
-          updatedAt: project.updatedAt,
-        }
+        writeProjectToStorage(project, get().storagePrefix)
 
-        // 保存项目数据
-        const config = getStorageConfig(get().storagePrefix)
-        storage.save(`project:${project.id}`, project, config)
-
-        // 更新项目列表
         set((state) => ({
           currentProject: project,
           isDirty: false,
-          projectList: [meta, ...state.projectList],
+          projectList: [buildProjectMeta(project), ...state.projectList],
         }))
 
         return project
       },
 
       loadProject: (id) => {
-        const config = getStorageConfig(get().storagePrefix)
-        const result = storage.load<Project>(`project:${id}`, config)
+        const project = readProjectFromStorage(id, get().storagePrefix)
+        if (!project) return false
 
-        if (result.success && result.data) {
-          set({ currentProject: result.data, isDirty: false })
-          return true
-        }
+        set({
+          currentProject: project,
+          isDirty: false,
+        })
 
-        return false
+        return true
       },
 
       saveProject: () => {
         const { currentProject, storagePrefix } = get()
         if (!currentProject) return false
 
-        const config = getStorageConfig(storagePrefix)
-        const updatedProject = {
+        const updatedProject: Project = {
           ...currentProject,
           updatedAt: Date.now(),
         }
 
-        const result = storage.save(`project:${currentProject.id}`, updatedProject, config)
-
-        if (result.success) {
-          // 更新项目列表中的元数据
-          set((state) => ({
-            currentProject: updatedProject,
-            isDirty: false,
-            projectList: state.projectList.map((meta) =>
-              meta.id === currentProject.id
-                ? {
-                    ...meta,
-                    name: updatedProject.name,
-                    description: updatedProject.description,
-                    updatedAt: updatedProject.updatedAt,
-                  }
-                : meta
-            ),
-          }))
-          return true
+        const result = writeProjectToStorage(updatedProject, storagePrefix)
+        if (!result.success) {
+          return false
         }
 
-        return false
+        set((state) => ({
+          currentProject: updatedProject,
+          isDirty: false,
+          projectList: state.projectList.map((meta) =>
+            meta.id === updatedProject.id ? buildProjectMeta(updatedProject) : meta
+          ),
+        }))
+
+        return true
       },
 
       closeProject: () => {
-        // 保存当前项目
         get().saveProject()
-        set({ currentProject: null, isDirty: false })
+        set({
+          currentProject: null,
+          isDirty: false,
+        })
       },
 
       deleteProject: (id) => {
         const { currentProject, storagePrefix } = get()
+        storage.remove(getProjectStorageKey(id), getStorageConfig(storagePrefix))
 
-        // 如果删除的是当前项目，先关闭
-        if (currentProject?.id === id) {
-          set({ currentProject: null, isDirty: false })
-        }
-
-        // 从存储中删除
-        const config = getStorageConfig(storagePrefix)
-        storage.remove(`project:${id}`, config)
-
-        // 更新项目列表
         set((state) => ({
+          currentProject: currentProject?.id === id ? null : state.currentProject,
+          isDirty: currentProject?.id === id ? false : state.isDirty,
           projectList: state.projectList.filter((meta) => meta.id !== id),
         }))
 
@@ -289,49 +249,31 @@ export const useProjectStore = create<ProjectState>()(
       },
 
       duplicateProject: (id) => {
-        const { storagePrefix, projectList } = get()
-        const config = getStorageConfig(storagePrefix)
+        const original = readProjectFromStorage(id, get().storagePrefix)
+        if (!original) return null
 
-        // 加载原项目
-        const result = storage.load<Project>(`project:${id}`, config)
-        if (!result.success || !result.data) return null
-
-        const original = result.data
         const now = Date.now()
-
-        // 创建副本
         const duplicate: Project = {
           ...original,
-          id: generateId(),
-          name: `${original.name} (副本)`,
+          id: generateProjectId(),
+          name: `${original.name}（副本）`,
           createdAt: now,
           updatedAt: now,
         }
 
-        // 保存副本
-        storage.save(`project:${duplicate.id}`, duplicate, config)
-
-        // 更新项目列表
-        const meta: ProjectMeta = {
-          id: duplicate.id,
-          name: duplicate.name,
-          description: duplicate.description,
-          createdAt: duplicate.createdAt,
-          updatedAt: duplicate.updatedAt,
-        }
+        writeProjectToStorage(duplicate, get().storagePrefix)
 
         set((state) => ({
-          projectList: [meta, ...state.projectList],
+          projectList: [buildProjectMeta(duplicate), ...state.projectList],
         }))
 
         return duplicate
       },
 
-      // ===== 项目数据操作 =====
-
       updateProjectInfo: (updates) => {
         set((state) => {
           if (!state.currentProject) return state
+
           return {
             currentProject: {
               ...state.currentProject,
@@ -346,6 +288,7 @@ export const useProjectStore = create<ProjectState>()(
       addCommandBlock: (block) => {
         set((state) => {
           if (!state.currentProject) return state
+
           return {
             currentProject: {
               ...state.currentProject,
@@ -360,6 +303,7 @@ export const useProjectStore = create<ProjectState>()(
       updateCommandBlock: (id, updates) => {
         set((state) => {
           if (!state.currentProject) return state
+
           return {
             currentProject: {
               ...state.currentProject,
@@ -376,12 +320,11 @@ export const useProjectStore = create<ProjectState>()(
       removeCommandBlock: (id) => {
         set((state) => {
           if (!state.currentProject) return state
+
           return {
             currentProject: {
               ...state.currentProject,
-              commandBlocks: state.currentProject.commandBlocks.filter(
-                (block) => block.id !== id
-              ),
+              commandBlocks: state.currentProject.commandBlocks.filter((block) => block.id !== id),
               updatedAt: Date.now(),
             },
             isDirty: true,
@@ -392,13 +335,15 @@ export const useProjectStore = create<ProjectState>()(
       reorderCommandBlocks: (startIndex, endIndex) => {
         set((state) => {
           if (!state.currentProject) return state
-          const blocks = [...state.currentProject.commandBlocks]
-          const [removed] = blocks.splice(startIndex, 1)
-          blocks.splice(endIndex, 0, removed)
+
+          const nextBlocks = [...state.currentProject.commandBlocks]
+          const [moved] = nextBlocks.splice(startIndex, 1)
+          nextBlocks.splice(endIndex, 0, moved)
+
           return {
             currentProject: {
               ...state.currentProject,
-              commandBlocks: blocks,
+              commandBlocks: nextBlocks,
               updatedAt: Date.now(),
             },
             isDirty: true,
@@ -409,6 +354,7 @@ export const useProjectStore = create<ProjectState>()(
       setCommandBlocks: (blocks) => {
         set((state) => {
           if (!state.currentProject) return state
+
           return {
             currentProject: {
               ...state.currentProject,
@@ -423,6 +369,7 @@ export const useProjectStore = create<ProjectState>()(
       addDatapack: (datapack) => {
         set((state) => {
           if (!state.currentProject) return state
+
           return {
             currentProject: {
               ...state.currentProject,
@@ -437,11 +384,12 @@ export const useProjectStore = create<ProjectState>()(
       updateDatapack: (id, updates) => {
         set((state) => {
           if (!state.currentProject) return state
+
           return {
             currentProject: {
               ...state.currentProject,
-              datapacks: state.currentProject.datapacks.map((dp) =>
-                dp.id === id ? { ...dp, ...updates } : dp
+              datapacks: state.currentProject.datapacks.map((datapack) =>
+                datapack.id === id ? { ...datapack, ...updates } : datapack
               ),
               updatedAt: Date.now(),
             },
@@ -453,10 +401,11 @@ export const useProjectStore = create<ProjectState>()(
       removeDatapack: (id) => {
         set((state) => {
           if (!state.currentProject) return state
+
           return {
             currentProject: {
               ...state.currentProject,
-              datapacks: state.currentProject.datapacks.filter((dp) => dp.id !== id),
+              datapacks: state.currentProject.datapacks.filter((datapack) => datapack.id !== id),
               updatedAt: Date.now(),
             },
             isDirty: true,
@@ -464,134 +413,80 @@ export const useProjectStore = create<ProjectState>()(
         })
       },
 
-      // ===== 设置操作 =====
-
       setAutoSave: (enabled) => set({ autoSave: enabled }),
 
-      setAutoSaveInterval: (interval) => set({ autoSaveInterval: interval }),
+      setAutoSaveInterval: (interval) =>
+        set({ autoSaveInterval: interval > 0 ? interval : DEFAULT_AUTO_SAVE_INTERVAL }),
 
       setStoragePrefix: (prefix) => {
-        set({ storagePrefix: prefix })
-        // 刷新项目列表
+        const nextPrefix = prefix.trim() || DEFAULT_STORAGE_PREFIX
+        set({ storagePrefix: nextPrefix })
         get().refreshProjectList()
       },
 
-      // ===== 查询操作 =====
-
       getProjectList: () => {
         const { projectList, storagePrefix } = get()
-        const config = getStorageConfig(storagePrefix)
 
         return projectList.map((meta) => {
-          const result = storage.load<Project>(`project:${meta.id}`, config)
-          return metaToListItem(meta, result.success ? result.data ?? null : null)
+          const project = readProjectFromStorage(meta.id, storagePrefix)
+          return toProjectListItem(meta, project)
         })
       },
 
-      getProjectById: (id) => {
-        const config = getStorageConfig(get().storagePrefix)
-        const result = storage.load<Project>(`project:${id}`, config)
-        return result.success ? result.data ?? null : null
-      },
-
-      // ===== 导入/导出 =====
+      getProjectById: (id) => readProjectFromStorage(id, get().storagePrefix),
 
       exportProject: () => {
         const { currentProject } = get()
         if (!currentProject) return null
 
-        return JSON.stringify(
-          {
-            name: currentProject.name,
-            version: '1.0.0',
-            exportedAt: Date.now(),
-            data: currentProject,
-          },
-          null,
-          2
-        )
+        return serializeProjectDocument(currentProject)
       },
 
       importProject: (json) => {
         try {
-          const parsed = JSON.parse(json)
-
-          if (!parsed.data) {
-            return { success: false, error: '无效的项目数据格式' }
-          }
-
-          const importedProject = parsed.data as Project
+          const imported = parseImportedProject(json)
           const now = Date.now()
-
-          // 生成新 ID
           const project: Project = {
-            ...importedProject,
-            id: generateId(),
-            name: importedProject.name || '导入的项目',
+            ...imported,
+            id: generateProjectId(),
+            name: imported.name || '导入的项目',
             createdAt: now,
             updatedAt: now,
           }
 
-          // 保存到存储
-          const config = getStorageConfig(get().storagePrefix)
-          storage.save(`project:${project.id}`, project, config)
-
-          // 更新项目列表
-          const meta: ProjectMeta = {
-            id: project.id,
-            name: project.name,
-            description: project.description,
-            createdAt: project.createdAt,
-            updatedAt: project.updatedAt,
-          }
+          writeProjectToStorage(project, get().storagePrefix)
 
           set((state) => ({
             currentProject: project,
             isDirty: false,
-            projectList: [meta, ...state.projectList],
+            projectList: [buildProjectMeta(project), ...state.projectList],
           }))
 
           return { success: true, project }
-        } catch (e) {
-          return { success: false, error: `导入失败: ${String(e)}` }
+        } catch (error) {
+          return { success: false, error: `导入失败: ${String(error)}` }
         }
       },
 
-      // ===== 工具操作 =====
-
       markDirty: () => set({ isDirty: true }),
-
       markClean: () => set({ isDirty: false }),
 
       refreshProjectList: () => {
-        const { storagePrefix } = get()
-        const config = getStorageConfig(storagePrefix)
-        const projectKeys = storage.getKeysByPrefix(storagePrefix).filter(
-          (key) => key.startsWith('project:')
-        )
+        const prefix = get().storagePrefix
+        const metas = storage
+          .getKeysByPrefix(prefix)
+          .filter((key) => key.startsWith('project:'))
+          .map((key) => storage.load<Project>(key, getStorageConfig(prefix)))
+          .flatMap((result) =>
+            result.success && result.data ? [buildProjectMeta(ensureProjectWorkflowModel(result.data))] : []
+          )
+          .sort((left, right) => right.updatedAt - left.updatedAt)
 
-        const metas: ProjectMeta[] = []
-        projectKeys.forEach((key) => {
-          const id = key.substring('project:'.length)
-          const result = storage.load<Project>(key, config)
-          if (result.success && result.data) {
-            metas.push({
-              id: result.data.id,
-              name: result.data.name,
-              description: result.data.description,
-              createdAt: result.data.createdAt,
-              updatedAt: result.data.updatedAt,
-            })
-          }
-        })
-
-        // 按更新时间排序
-        metas.sort((a, b) => b.updatedAt - a.updatedAt)
         set({ projectList: metas })
       },
     }),
     {
-      name: 'mc-editor-project-store',
+      name: PROJECT_STORE_NAME,
       storage: createJSONStorage(() => localStorage),
       partialize: (state) => ({
         projectList: state.projectList,
@@ -603,42 +498,31 @@ export const useProjectStore = create<ProjectState>()(
   )
 )
 
-// ============================================================================
-// 导出 Hooks
-// ============================================================================
-
-/** 获取当前项目 */
 export function useCurrentProject() {
   return useProjectStore((state) => state.currentProject)
 }
 
-/** 获取项目是否已修改 */
 export function useIsDirty() {
   return useProjectStore((state) => state.isDirty)
 }
 
-/** 获取项目列表 */
 export function useProjectList() {
   return useProjectStore((state) => state.projectList)
 }
 
-/** 获取项目操作方法 */
 export function useProjectActions() {
-  const store = useProjectStore
-
-  return {
-    createProject: store.getState().createProject,
-    loadProject: store.getState().loadProject,
-    saveProject: store.getState().saveProject,
-    closeProject: store.getState().closeProject,
-    deleteProject: store.getState().deleteProject,
-    duplicateProject: store.getState().duplicateProject,
-    importProject: store.getState().importProject,
-    exportProject: store.getState().exportProject,
-  }
+  return useProjectStore((state) => ({
+    createProject: state.createProject,
+    loadProject: state.loadProject,
+    saveProject: state.saveProject,
+    closeProject: state.closeProject,
+    deleteProject: state.deleteProject,
+    duplicateProject: state.duplicateProject,
+    importProject: state.importProject,
+    exportProject: state.exportProject,
+  }))
 }
 
-/** 获取项目设置 */
 export function useProjectSettings() {
   return useProjectStore((state) => ({
     autoSave: state.autoSave,
@@ -647,19 +531,16 @@ export function useProjectSettings() {
   }))
 }
 
-/** 获取项目数据操作方法 */
 export function useProjectDataActions() {
-  const store = useProjectStore
-
-  return {
-    updateProjectInfo: store.getState().updateProjectInfo,
-    addCommandBlock: store.getState().addCommandBlock,
-    updateCommandBlock: store.getState().updateCommandBlock,
-    removeCommandBlock: store.getState().removeCommandBlock,
-    reorderCommandBlocks: store.getState().reorderCommandBlocks,
-    setCommandBlocks: store.getState().setCommandBlocks,
-    addDatapack: store.getState().addDatapack,
-    updateDatapack: store.getState().updateDatapack,
-    removeDatapack: store.getState().removeDatapack,
-  }
+  return useProjectStore((state) => ({
+    updateProjectInfo: state.updateProjectInfo,
+    addCommandBlock: state.addCommandBlock,
+    updateCommandBlock: state.updateCommandBlock,
+    removeCommandBlock: state.removeCommandBlock,
+    reorderCommandBlocks: state.reorderCommandBlocks,
+    setCommandBlocks: state.setCommandBlocks,
+    addDatapack: state.addDatapack,
+    updateDatapack: state.updateDatapack,
+    removeDatapack: state.removeDatapack,
+  }))
 }
