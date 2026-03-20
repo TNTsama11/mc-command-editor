@@ -1,8 +1,12 @@
 import { create } from 'zustand'
 import { createJSONStorage, persist } from 'zustand/middleware'
 
+import {
+  createEmptyWorkflowDocument,
+  type WorkflowDocument,
+  type WorkflowPortDocument,
+} from '@/core/workflow/types'
 import { deserializeProjectDocument, serializeProjectDocument } from '@/core/workflow/projectSerializer'
-import { createEmptyWorkflowDocument } from '@/core/workflow/types'
 import type { CommandBlock, Datapack, Project } from '@/types'
 import { type StorageConfig, storage } from '@/utils/storage'
 
@@ -31,6 +35,13 @@ interface ProjectImportResult {
   error?: string
 }
 
+interface CreateFunctionWorkflowOptions {
+  name: string
+  description?: string
+  inputs?: WorkflowPortDocument[]
+  outputs?: WorkflowPortDocument[]
+}
+
 interface ProjectState {
   currentProject: Project | null
   isDirty: boolean
@@ -49,6 +60,8 @@ interface ProjectState {
   updateProjectInfo: (
     updates: Partial<Pick<Project, 'name' | 'description' | 'targetVersion'>>
   ) => void
+  setWorkflowDocument: (workflowId: string, workflow: WorkflowDocument) => void
+  createFunctionWorkflow: (options: CreateFunctionWorkflowOptions) => WorkflowDocument
   addCommandBlock: (block: CommandBlock) => void
   updateCommandBlock: (id: string, updates: Partial<CommandBlock>) => void
   removeCommandBlock: (id: string) => void
@@ -64,6 +77,7 @@ interface ProjectState {
 
   getProjectList: () => ProjectListItem[]
   getProjectById: (id: string) => Project | null
+  getFunctionWorkflows: () => WorkflowDocument[]
   exportProject: () => string | null
   importProject: (json: string) => ProjectImportResult
 
@@ -74,6 +88,10 @@ interface ProjectState {
 
 function generateProjectId() {
   return `proj_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`
+}
+
+function generateWorkflowId() {
+  return `wf_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`
 }
 
 function getStorageConfig(prefix: string): StorageConfig {
@@ -160,11 +178,19 @@ function parseImportedProject(json: string): Project {
     const legacy = JSON.parse(json) as { data?: Project; project?: Project }
     const rawProject = legacy.project || legacy.data
     if (!rawProject) {
-      throw new Error('导入文件格式无效。')
+      throw new Error('导入文件格式无效')
     }
 
     return ensureProjectWorkflowModel(rawProject)
   }
+}
+
+function requireCurrentProject(project: Project | null): Project {
+  if (!project) {
+    throw new Error('当前没有已打开的项目')
+  }
+
+  return project
 }
 
 export const useProjectStore = create<ProjectState>()(
@@ -285,6 +311,50 @@ export const useProjectStore = create<ProjectState>()(
         })
       },
 
+      setWorkflowDocument: (workflowId, workflow) => {
+        set((state) => {
+          if (!state.currentProject) return state
+
+          return {
+            currentProject: {
+              ...state.currentProject,
+              workflows: {
+                ...state.currentProject.workflows,
+                [workflowId]: workflow,
+              },
+              updatedAt: Date.now(),
+            },
+            isDirty: true,
+          }
+        })
+      },
+
+      createFunctionWorkflow: (options) => {
+        const currentProject = requireCurrentProject(get().currentProject)
+        const workflowId = generateWorkflowId()
+        const workflow = createEmptyWorkflowDocument(workflowId, options.name, 'function')
+
+        workflow.interface = {
+          inputs: options.inputs ?? [],
+          outputs: options.outputs ?? [],
+        }
+        workflow.metadata.description = options.description
+
+        set({
+          currentProject: {
+            ...currentProject,
+            workflows: {
+              ...currentProject.workflows,
+              [workflowId]: workflow,
+            },
+            updatedAt: Date.now(),
+          },
+          isDirty: true,
+        })
+
+        return workflow
+      },
+
       addCommandBlock: (block) => {
         set((state) => {
           if (!state.currentProject) return state
@@ -338,6 +408,10 @@ export const useProjectStore = create<ProjectState>()(
 
           const nextBlocks = [...state.currentProject.commandBlocks]
           const [moved] = nextBlocks.splice(startIndex, 1)
+          if (!moved) {
+            return state
+          }
+
           nextBlocks.splice(endIndex, 0, moved)
 
           return {
@@ -435,6 +509,15 @@ export const useProjectStore = create<ProjectState>()(
 
       getProjectById: (id) => readProjectFromStorage(id, get().storagePrefix),
 
+      getFunctionWorkflows: () => {
+        const project = get().currentProject
+        if (!project) {
+          return []
+        }
+
+        return Object.values(project.workflows).filter((workflow) => workflow.metadata.kind === 'function')
+      },
+
       exportProject: () => {
         const { currentProject } = get()
         if (!currentProject) return null
@@ -510,6 +593,14 @@ export function useProjectList() {
   return useProjectStore((state) => state.projectList)
 }
 
+export function useFunctionWorkflows() {
+  return useProjectStore((state) =>
+    state.currentProject
+      ? Object.values(state.currentProject.workflows).filter((workflow) => workflow.metadata.kind === 'function')
+      : []
+  )
+}
+
 export function useProjectActions() {
   return useProjectStore((state) => ({
     createProject: state.createProject,
@@ -534,6 +625,8 @@ export function useProjectSettings() {
 export function useProjectDataActions() {
   return useProjectStore((state) => ({
     updateProjectInfo: state.updateProjectInfo,
+    setWorkflowDocument: state.setWorkflowDocument,
+    createFunctionWorkflow: state.createFunctionWorkflow,
     addCommandBlock: state.addCommandBlock,
     updateCommandBlock: state.updateCommandBlock,
     removeCommandBlock: state.removeCommandBlock,

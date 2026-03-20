@@ -6,11 +6,11 @@ import {
 } from '@/components/flow/CommandNode'
 import { FUNCTION_NODE_EDITOR_TITLE } from '@/components/flow/FunctionNodeEditor'
 import { EMPTY_FLOW_HINTS } from '@/components/flow/FlowEditor'
-import { createFunctionNode } from '@/components/flow/NodeFactory'
+import { createFunctionNode, createFunctionNodeFromWorkflow } from '@/components/flow/NodeFactory'
 import { useProjectStore } from '@/store/projectStore'
 import { type MCNode, useFlowStore } from '@/store/flowStore'
 
-describe('Task 3 Integration', () => {
+describe('flow integration', () => {
   beforeEach(() => {
     useFlowStore.getState().clear()
     useProjectStore.setState({
@@ -37,7 +37,7 @@ describe('Task 3 Integration', () => {
     expect(EMPTY_FLOW_HINTS.items).toContain('方形引脚表示数据流')
   })
 
-  it('拒绝不兼容连线时应保留可见的失败原因', () => {
+  it('拒绝不兼容连接时应保留可见的失败原因', () => {
     const numberNode: MCNode = {
       id: 'source',
       type: 'command',
@@ -103,6 +103,25 @@ describe('Task 3 Integration', () => {
     expect(functionNode.data.outputs).toEqual([
       { id: 'exec-out', name: '执行', type: 'execute' },
     ])
+  })
+
+  it('函数节点应能直接从项目工作流文档构建', () => {
+    useProjectStore.getState().createProject('Function Project')
+    const workflow = useProjectStore.getState().createFunctionWorkflow({
+      name: '奖励逻辑',
+      description: '复用一段奖励流程',
+      inputs: [{ id: 'target', name: '目标', type: 'entity', required: true }],
+      outputs: [{ id: 'exec-out', name: '执行', type: 'execute' }],
+    })
+
+    const functionNode = createFunctionNodeFromWorkflow(workflow, { x: 200, y: 120 })
+
+    expect(functionNode.data.commandType).toBe('function')
+    expect(functionNode.data.label).toBe('奖励逻辑')
+    expect(functionNode.data.workflowId).toBe(workflow.id)
+    expect(functionNode.data.description).toBe('复用一段奖励流程')
+    expect(functionNode.data.inputs).toEqual(workflow.interface.inputs)
+    expect(functionNode.data.outputs).toEqual(workflow.interface.outputs)
   })
 
   it('函数编辑器骨架应暴露稳定标题，供后续进入子图编辑', () => {

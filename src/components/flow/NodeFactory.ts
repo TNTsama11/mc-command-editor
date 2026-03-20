@@ -4,6 +4,7 @@
  */
 
 import { v4 as uuidv4 } from 'uuid'
+import type { WorkflowDocument } from '@/core/workflow/types'
 import { MCNode, CommandNodeData, PinDefinition, PinDataType } from '@/store/flowStore'
 
 // 预定义的命令节点配置
@@ -1033,4 +1034,20 @@ export function createFunctionNode(
       errors: [],
     },
   }
+}
+
+export function createFunctionNodeFromWorkflow(
+  workflow: WorkflowDocument,
+  position: { x: number; y: number }
+): MCNode {
+  return createFunctionNode(
+    {
+      workflowId: workflow.id,
+      name: workflow.name,
+      description: workflow.metadata.description,
+      inputs: workflow.interface.inputs as PinDefinition[],
+      outputs: workflow.interface.outputs as PinDefinition[],
+    },
+    position
+  )
 }

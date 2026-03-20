@@ -26,9 +26,10 @@ import {
 import '@xyflow/react/dist/style.css'
 
 import { cn } from '@/lib/utils'
+import { useCurrentProject } from '@/store/projectStore'
 import { useFlowStore, type CommandNodeData } from '@/store/flowStore'
 import { CommandNode } from './CommandNode'
-import { createNode } from './NodeFactory'
+import { createFunctionNodeFromWorkflow, createNode } from './NodeFactory'
 
 export const EMPTY_FLOW_HINTS = {
   title: '先从高频命令或 Execute 节点开始',
@@ -63,6 +64,7 @@ function FlowEditorInner({ className }: FlowEditorProps) {
   const contextMenuHeight = 44
   const contextMenuPadding = 8
 
+  const currentProject = useCurrentProject()
   const {
     nodes,
     edges,
@@ -194,8 +196,8 @@ function FlowEditorInner({ className }: FlowEditorProps) {
     (event: DragEvent<HTMLDivElement>) => {
       event.preventDefault()
 
-      const type = event.dataTransfer.getData('application/reactflow')
-      if (!type) {
+      const payload = event.dataTransfer.getData('application/reactflow')
+      if (!payload) {
         return
       }
 
@@ -204,9 +206,20 @@ function FlowEditorInner({ className }: FlowEditorProps) {
         y: event.clientY,
       })
 
-      addNode(createNode(type, position))
+      const workflowPayload = parseFunctionWorkflowPayload(payload)
+      if (workflowPayload) {
+        const workflow = currentProject?.workflows[workflowPayload.workflowId]
+        if (!workflow) {
+          return
+        }
+
+        addNode(createFunctionNodeFromWorkflow(workflow, position))
+        return
+      }
+
+      addNode(createNode(payload, position))
     },
-    [addNode, screenToFlowPosition]
+    [addNode, currentProject?.workflows, screenToFlowPosition]
   )
 
   const selectedNode = nodes.find((node) => node.id === selectedNodeId)
@@ -399,4 +412,21 @@ export function FlowEditor(props: FlowEditorProps) {
       <FlowEditorInner {...props} />
     </ReactFlowProvider>
   )
+}
+
+function parseFunctionWorkflowPayload(payload: string): { workflowId: string } | null {
+  if (!payload.startsWith('{')) {
+    return null
+  }
+
+  try {
+    const parsed = JSON.parse(payload) as { kind?: string; workflowId?: string }
+    if (parsed.kind !== 'function-workflow' || !parsed.workflowId) {
+      return null
+    }
+
+    return { workflowId: parsed.workflowId }
+  } catch {
+    return null
+  }
 }

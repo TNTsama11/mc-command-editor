@@ -7,8 +7,8 @@ import { useEffect, useMemo, useState } from 'react'
 import { Blocks, Database, PanelLeft, PanelLeftClose } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
-import { useFlowStore } from '@/store/flowStore'
-import { useCurrentProject } from '@/store/projectStore'
+import { createWorkflowDocumentSnapshot, useFlowStore } from '@/store/flowStore'
+import { useCurrentProject, useProjectStore } from '@/store/projectStore'
 import { FlowEditor } from './FlowEditor'
 import { WorkflowProblemsPanel } from './WorkflowProblemsPanel'
 import { NodePanel } from './NodePanel'
@@ -26,11 +26,14 @@ export function NodeEditorPage({ className }: NodeEditorPageProps) {
   const [leftPanel, setLeftPanel] = useState<LeftPanel>('nodes')
   const [leftPanelOpen, setLeftPanelOpen] = useState(false)
   const currentProject = useCurrentProject()
+  const setWorkflowDocument = useProjectStore((state) => state.setWorkflowDocument)
   const {
     nodes,
     edges,
     selectedNodeId,
     workflowIssues,
+    setNodes,
+    setEdges,
     setSelectedNode,
     validateGraph,
   } = useFlowStore()
@@ -53,6 +56,64 @@ export function NodeEditorPage({ className }: NodeEditorPageProps) {
   useEffect(() => {
     validateGraph(currentProject?.targetVersion ?? DEFAULT_TARGET_VERSION)
   }, [currentProject?.targetVersion, edges, nodes, validateGraph])
+
+  useEffect(() => {
+    const workflow = currentProject?.workflows[currentProject.mainWorkflowId]
+    if (!workflow) {
+      return
+    }
+
+    setNodes(
+      workflow.nodes.map((node) => ({
+        id: node.id,
+        type: node.type as 'command',
+        position: node.position,
+        data: node.data as never,
+      }))
+    )
+    setEdges(
+      workflow.edges.map((edge) => ({
+        id: edge.id,
+        source: edge.source,
+        target: edge.target,
+        sourceHandle: edge.sourceHandle,
+        targetHandle: edge.targetHandle,
+        type: edge.type,
+        animated: edge.animated,
+        data: edge.data as never,
+      }))
+    )
+  }, [currentProject?.id, currentProject?.mainWorkflowId, currentProject?.workflows, setEdges, setNodes])
+
+  useEffect(() => {
+    if (!currentProject) {
+      return
+    }
+
+    const snapshot = createWorkflowDocumentSnapshot({
+      id: currentProject.mainWorkflowId,
+      name: currentProject.workflows[currentProject.mainWorkflowId]?.name ?? '主工作流',
+      kind: currentProject.workflows[currentProject.mainWorkflowId]?.metadata.kind ?? 'main',
+      description: currentProject.workflows[currentProject.mainWorkflowId]?.metadata.description,
+    })
+
+    const previous = currentProject.workflows[currentProject.mainWorkflowId]
+    const hasSameNodes = JSON.stringify(previous?.nodes ?? []) === JSON.stringify(snapshot.nodes)
+    const hasSameEdges = JSON.stringify(previous?.edges ?? []) === JSON.stringify(snapshot.edges)
+
+    if (hasSameNodes && hasSameEdges) {
+      return
+    }
+
+    setWorkflowDocument(currentProject.mainWorkflowId, {
+      ...snapshot,
+      interface: previous?.interface ?? snapshot.interface,
+      metadata: {
+        ...snapshot.metadata,
+        createdAt: previous?.metadata.createdAt ?? snapshot.metadata.createdAt,
+      },
+    })
+  }, [currentProject, edges, nodes, setWorkflowDocument])
 
   const groupedIssues = useMemo(() => {
     return workflowIssues.map((issue) => ({

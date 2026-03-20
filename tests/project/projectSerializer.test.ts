@@ -90,6 +90,69 @@ describe('project workflow model', () => {
     expect(useProjectStore.getState().currentProject?.targetVersion).toBe('1.20.4')
   })
 
+  it('项目应支持更新指定工作流文档', () => {
+    const project = useProjectStore.getState().createProject('Workflow Project')
+
+    useProjectStore.getState().setWorkflowDocument(project.mainWorkflowId, {
+      ...project.workflows[project.mainWorkflowId],
+      nodes: [
+        {
+          id: 'give-node',
+          type: 'command',
+          position: { x: 120, y: 80 },
+          data: {
+            label: 'Give',
+            commandType: 'give',
+          },
+        },
+      ],
+    })
+
+    expect(useProjectStore.getState().currentProject?.workflows[project.mainWorkflowId]?.nodes).toHaveLength(1)
+    expect(useProjectStore.getState().currentProject?.workflows[project.mainWorkflowId]?.nodes[0]?.id).toBe(
+      'give-node'
+    )
+  })
+
+  it('项目应支持创建函数工作流，并保留接口定义', () => {
+    const project = useProjectStore.getState().createProject('Workflow Project')
+
+    const functionWorkflow = useProjectStore.getState().createFunctionWorkflow({
+      name: '奖励逻辑',
+      description: '复用一段奖励流程',
+      inputs: [{ id: 'target', name: '目标', type: 'entity', required: true }],
+      outputs: [{ id: 'exec-out', name: '执行', type: 'execute' }],
+    })
+
+    expect(functionWorkflow.id).not.toBe(project.mainWorkflowId)
+    expect(functionWorkflow.metadata.kind).toBe('function')
+    expect(functionWorkflow.name).toBe('奖励逻辑')
+    expect(functionWorkflow.metadata.description).toBe('复用一段奖励流程')
+    expect(functionWorkflow.interface.inputs).toEqual([
+      { id: 'target', name: '目标', type: 'entity', required: true },
+    ])
+    expect(functionWorkflow.interface.outputs).toEqual([
+      { id: 'exec-out', name: '执行', type: 'execute' },
+    ])
+    expect(useProjectStore.getState().currentProject?.workflows[functionWorkflow.id]).toEqual(functionWorkflow)
+  })
+
+  it('项目应能筛出可复用的函数工作流列表', () => {
+    useProjectStore.getState().createProject('Workflow Project')
+    const rewardWorkflow = useProjectStore.getState().createFunctionWorkflow({
+      name: '奖励逻辑',
+    })
+    const combatWorkflow = useProjectStore.getState().createFunctionWorkflow({
+      name: '战斗逻辑',
+    })
+
+    const functionWorkflows = useProjectStore.getState().getFunctionWorkflows()
+
+    expect(functionWorkflows).toHaveLength(2)
+    expect(functionWorkflows.map((workflow) => workflow.id)).toEqual([rewardWorkflow.id, combatWorkflow.id])
+    expect(functionWorkflows.every((workflow) => workflow.metadata.kind === 'function')).toBe(true)
+  })
+
   it('项目序列化后应保留工作流和目标版本', () => {
     const project = useProjectStore.getState().createProject('Workflow Project')
     project.workflows['wf-reward'] = {
